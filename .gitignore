@@ -1,0 +1,50 @@
+# ---- data and model artifacts (never committed) -----------------------------
+# PAD-UFES-20 is CC BY 4.0 but is not redistributed here; no patient data in git.
+data/
+Dummy/
+outputs/
+models/
+*.pt
+*.pth
+*.joblib
+*.pkl
+*.npy
+*.npz
+*.faiss
+*.index
+
+# ---- python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+.venv/
+venv/
+env/
+
+# ---- tooling ----------------------------------------------------------------
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---- experiment tracking ----------------------------------------------------
+wandb/
+mlruns/
+runs/
+events.out.tfevents.*
+
+# ---- secrets ----------------------------------------------------------------
+.env
+*.key
+
+# ---- editors / OS -----------------------------------------------------------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

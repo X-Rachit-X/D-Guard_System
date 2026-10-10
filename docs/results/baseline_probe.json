@@ -1,0 +1,365 @@
+{
+  "manifest": {
+    "created": "2026-10-11T05:03:36",
+    "n_rows": 2298,
+    "image_set_sha256": "e6d95eac4236e7b224b1f15590d6d7ee5ef640ad6f1d61e792af17bbc41ea264",
+    "metadata_csv": "data\\raw\\metadata.csv",
+    "image_dir": "data\\raw\\images",
+    "texts_csv": "Dummy\\Project\\data\\generated_clinical_texts.csv",
+    "image_backbone": {
+      "arch": "resnet50",
+      "weights": "IMAGENET1K_V2",
+      "head": "fc=Identity"
+    },
+    "image_transform": {
+      "resize": [
+        224,
+        224
+      ],
+      "interpolation": "bilinear (torchvision default)",
+      "to_tensor": "scales uint8 -> [0,1]",
+      "normalize": {
+        "mean": [
+          0.485,
+          0.456,
+          0.406
+        ],
+        "std": [
+          0.229,
+          0.224,
+          0.225
+        ]
+      },
+      "channel_order": "RGB"
+    },
+    "text_encoder": {
+      "repo": "emilyalsentzer/Bio_ClinicalBERT",
+      "pooling": "CLS",
+      "max_length": 128
+    },
+    "metadata": {
+      "preprocessor": "src.data.metadata_preprocessor.MetadataPreprocessor",
+      "dim": 114,
+      "fit_on_train_only": true
+    },
+    "class_to_index": {
+      "BCC": 0,
+      "ACK": 1,
+      "NEV": 2,
+      "SEK": 3,
+      "SCC": 4,
+      "MEL": 5
+    },
+    "versions": {
+      "python": "3.13.9",
+      "torch": "2.13.0+cpu",
+      "torchvision": "0.28.0+cpu",
+      "transformers": "5.14.1",
+      "numpy": "2.3.5",
+      "pandas": "2.3.3"
+    },
+    "seed": 42
+  },
+  "model": "logreg",
+  "seeds": [
+    42,
+    7,
+    2026
+  ],
+  "runs": {
+    "42": {
+      "A": {
+        "label": "image only",
+        "modalities": [
+          "img"
+        ],
+        "accuracy": 0.5657142857142857,
+        "balanced_accuracy": 0.5007230043685543,
+        "macro_f1": 0.5059265622520214,
+        "acc_ci": [
+          0.5171428571428571,
+          0.6171428571428571
+        ]
+      },
+      "B": {
+        "label": "metadata only",
+        "modalities": [
+          "meta"
+        ],
+        "accuracy": 0.6857142857142857,
+        "balanced_accuracy": 0.6903983488545404,
+        "macro_f1": 0.655045923634649,
+        "acc_ci": [
+          0.6371428571428571,
+          0.7314285714285714
+        ]
+      },
+      "C": {
+        "label": "text only",
+        "modalities": [
+          "text"
+        ],
+        "accuracy": 0.5314285714285715,
+        "balanced_accuracy": 0.41663726746656055,
+        "macro_f1": 0.40385389918405584,
+        "acc_ci": [
+          0.47714285714285715,
+          0.5857142857142857
+        ]
+      },
+      "D": {
+        "label": "image + metadata",
+        "modalities": [
+          "img",
+          "meta"
+        ],
+        "accuracy": 0.7428571428571429,
+        "balanced_accuracy": 0.7029874887998372,
+        "macro_f1": 0.7059514575471105,
+        "acc_ci": [
+          0.6970714285714286,
+          0.7857142857142857
+        ]
+      },
+      "E": {
+        "label": "image + text",
+        "modalities": [
+          "img",
+          "text"
+        ],
+        "accuracy": 0.6628571428571428,
+        "balanced_accuracy": 0.5897536474640319,
+        "macro_f1": 0.5984890543087286,
+        "acc_ci": [
+          0.6171428571428571,
+          0.7057142857142857
+        ]
+      },
+      "F": {
+        "label": "text + metadata",
+        "modalities": [
+          "text",
+          "meta"
+        ],
+        "accuracy": 0.68,
+        "balanced_accuracy": 0.6293959902435883,
+        "macro_f1": 0.6182875989387218,
+        "acc_ci": [
+          0.6285714285714286,
+          0.7257142857142858
+        ]
+      },
+      "G": {
+        "label": "all three",
+        "modalities": [
+          "img",
+          "meta",
+          "text"
+        ],
+        "accuracy": 0.7285714285714285,
+        "balanced_accuracy": 0.6775704815147253,
+        "macro_f1": 0.6783621599724823,
+        "acc_ci": [
+          0.6828571428571428,
+          0.7714285714285715
+        ]
+      }
+    },
+    "7": {
+      "A": {
+        "label": "image only",
+        "modalities": [
+          "img"
+        ],
+        "accuracy": 0.5619834710743802,
+        "balanced_accuracy": 0.432250545153771,
+        "macro_f1": 0.4247658633090427,
+        "acc_ci": [
+          0.509641873278237,
+          0.6115702479338843
+        ]
+      },
+      "B": {
+        "label": "metadata only",
+        "modalities": [
+          "meta"
+        ],
+        "accuracy": 0.6914600550964187,
+        "balanced_accuracy": 0.7225239955290889,
+        "macro_f1": 0.6445892137144882,
+        "acc_ci": [
+          0.6446280991735537,
+          0.7356060606060605
+        ]
+      },
+      "C": {
+        "label": "text only",
+        "modalities": [
+          "text"
+        ],
+        "accuracy": 0.5509641873278237,
+        "balanced_accuracy": 0.4333127516701371,
+        "macro_f1": 0.4326638393841728,
+        "acc_ci": [
+          0.5013085399449035,
+          0.6006198347107436
+        ]
+      },
+      "D": {
+        "label": "image + metadata",
+        "modalities": [
+          "img",
+          "meta"
+        ],
+        "accuracy": 0.7107438016528925,
+        "balanced_accuracy": 0.605165024562308,
+        "macro_f1": 0.6233583391659693,
+        "acc_ci": [
+          0.6584022038567493,
+          0.7548209366391184
+        ]
+      },
+      "E": {
+        "label": "image + text",
+        "modalities": [
+          "img",
+          "text"
+        ],
+        "accuracy": 0.6336088154269972,
+        "balanced_accuracy": 0.4893991077777156,
+        "macro_f1": 0.5014524432298578,
+        "acc_ci": [
+          0.5867768595041323,
+          0.6804407713498623
+        ]
+      },
+      "F": {
+        "label": "text + metadata",
+        "modalities": [
+          "text",
+          "meta"
+        ],
+        "accuracy": 0.6804407713498623,
+        "balanced_accuracy": 0.5677244868883239,
+        "macro_f1": 0.5667693857350764,
+        "acc_ci": [
+          0.6336088154269972,
+          0.7300275482093664
+        ]
+      },
+      "G": {
+        "label": "all three",
+        "modalities": [
+          "img",
+          "meta",
+          "text"
+        ],
+        "accuracy": 0.6776859504132231,
+        "balanced_accuracy": 0.5534080332042981,
+        "macro_f1": 0.5714690414487346,
+        "acc_ci": [
+          0.628099173553719,
+          0.7245179063360881
+        ]
+      }
+    },
+    "2026": {
+      "A": {
+        "label": "image only",
+        "modalities": [
+          "img"
+        ],
+        "accuracy": 0.5747126436781609,
+        "balanced_accuracy": 0.47865913912661884,
+        "macro_f1": 0.5005080505080505,
+        "acc_ci": [
+          0.5201149425287356,
+          0.6264367816091954
+        ]
+      },
+      "B": {
+        "label": "metadata only",
+        "modalities": [
+          "meta"
+        ],
+        "accuracy": 0.6925287356321839,
+        "balanced_accuracy": 0.6570006998868787,
+        "macro_f1": 0.6451653791826335,
+        "acc_ci": [
+          0.6436781609195402,
+          0.7385057471264368
+        ]
+      },
+      "C": {
+        "label": "text only",
+        "modalities": [
+          "text"
+        ],
+        "accuracy": 0.514367816091954,
+        "balanced_accuracy": 0.4159591189062733,
+        "macro_f1": 0.40642410239276533,
+        "acc_ci": [
+          0.46264367816091956,
+          0.5660919540229885
+        ]
+      },
+      "D": {
+        "label": "image + metadata",
+        "modalities": [
+          "img",
+          "meta"
+        ],
+        "accuracy": 0.7155172413793104,
+        "balanced_accuracy": 0.5933858029386485,
+        "macro_f1": 0.631392578850206,
+        "acc_ci": [
+          0.6695402298850575,
+          0.7614942528735632
+        ]
+      },
+      "E": {
+        "label": "image + text",
+        "modalities": [
+          "img",
+          "text"
+        ],
+        "accuracy": 0.6436781609195402,
+        "balanced_accuracy": 0.542101912731994,
+        "macro_f1": 0.5782597539316464,
+        "acc_ci": [
+          0.5890804597701149,
+          0.6982758620689655
+        ]
+      },
+      "F": {
+        "label": "text + metadata",
+        "modalities": [
+          "text",
+          "meta"
+        ],
+        "accuracy": 0.6925287356321839,
+        "balanced_accuracy": 0.5606457692839807,
+        "macro_f1": 0.5772078678327921,
+        "acc_ci": [
+          0.6436781609195402,
+          0.7413793103448276
+        ]
+      },
+      "G": {
+        "label": "all three",
+        "modalities": [
+          "img",
+          "meta",
+          "text"
+        ],
+        "accuracy": 0.7298850574712644,
+        "balanced_accuracy": 0.612931145654723,
+        "macro_f1": 0.6505876501138769,
+        "acc_ci": [
+          0.6839080459770115,
+          0.775933908045977
+        ]
+      }
+    }
+  }
+}
