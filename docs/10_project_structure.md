@@ -39,7 +39,11 @@ src/
 ├── decision/
 │   ├── policy.py         four outcomes, tiers, gates, cost matrix
 │   └── explain.py        patient and doctor wording
-├── native/engine.py      the trained model, one case at a time
+├── native/engine.py      the trained model + specialist team, one case at a time
+├── specialists/          S4: the original PAD-UFES Model A (architecture vendored)
+├── fusion/
+│   ├── adaptive.py       Devil's Advocate + iterative diagnosis-adaptive fusion
+│   └── runtime.py        the same team fusion for a single case
 ├── agents/
 │   ├── quality.py        image-quality agent
 │   ├── librarian.py      similar confirmed cases (RAG)
@@ -60,6 +64,8 @@ src/
 |---|---|---|
 | `milk10k_audit.py` | audit the dataset | seconds |
 | `milk_native_infer.py` | run the trained model on val + test, verify against Kaggle | ~2.5 min |
+| `build_specialists.py` | runs all 5 specialists over train/val/test | ~15 min |
+| `run_team.py` | Devil's Advocate + adaptive fusion, fitted on val, scored on test | ~1 min |
 | `run_eade_milk.py` | the main experiment: decision engine vs 6 baselines; writes the calibration bundle | ~20 s |
 | `build_milk_index.py` | similar-case index over training lesions | ~3 min |
 | `run_stress_milk.py` | robustness to degraded photos / missing details | ~3 min |

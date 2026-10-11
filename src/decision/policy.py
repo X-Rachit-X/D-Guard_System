@@ -50,6 +50,7 @@ class DeferReason(str, Enum):
     NO_EVIDENCE = "NO_EVIDENCE"  # nothing supplied at all
     ACQUISITION_EXHAUSTED = "ACQUISITION_EXHAUSTED"
     QUALITY = "QUALITY"          # photo outside the calibrated quality range
+    OUT_OF_DISTRIBUTION = "OUT_OF_DISTRIBUTION"   # unlike any training lesion (Mahalanobis)
 
 
 # ---------------------------------------------------------------------------

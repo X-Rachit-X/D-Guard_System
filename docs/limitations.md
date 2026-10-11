@@ -87,7 +87,7 @@ cases is an assumption still to be tested (H5).
 are required before they are final, and validation was used both to pick the epoch and to
 calibrate the policy.
 
-**Only about a third of answers are HIGH confidence.** In minimal-defer mode 90% of patients get an answer, but 55% of patients get a LOW-confidence answer (51.7% exactly right, 82% with the truth in the top 3) and need a doctor's confirmation. The HIGH share is set by the classifier's quality.
+**About 60% of patients get a HIGH-confidence answer (team fusion); 29% get a LOW one.** In minimal-defer mode 90% of patients get an answer, but 55% of patients get a LOW-confidence answer (51.7% exactly right, 82% with the truth in the top 3) and need a doctor's confirmation. The HIGH share is set by the classifier's quality.
 
 **At the pre-registered cost the system cannot reassure anyone.** With a missed cancer
 priced at 10, every answer it gives is a cancer diagnosis. See

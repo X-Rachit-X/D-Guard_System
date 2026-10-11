@@ -13,14 +13,15 @@ and gives one of four outcomes:
 
 | Outcome | Meaning | Share of test patients |
 |---|---|---|
-| ✅ **Answer — HIGH confidence** | every safety check passed; calibrated answer | 35% |
-| 📷 **Ask for dermoscopy** | a close-up through a skin lens is expected to help; then it answers | 6% (then answered) |
-| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 55% |
+| ✅ **Answer — HIGH confidence** | every safety check passed; calibrated answer | 60% |
+| 📷 **Ask for dermoscopy** | a close-up through a skin lens is expected to help; then it answers | 27% (then answered) |
+| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 29% |
 | 🧑‍⚕️ **Defer** | the photo and the details point to *different* diagnoses — a human must decide | 10% |
 
-**9 in 10 patients get an answer**, and the HIGH-confidence answers are **84% accurate on
-11 diagnoses** and miss **1.8%** of cancers, against **4.7%** for the standard approach at
-the same coverage. Around it sits a care platform: patient app, doctor review queue,
+**9 in 10 patients get an answer and 6 in 10 a confident one.** HIGH-confidence answers are
+**76% accurate on 11 diagnoses** and miss **3.0%** of cancers, against **9.3%** for the
+standard approach at the same coverage. A **team of five specialists**, combined by the old
+project's iterative diagnosis-adaptive fusion, raises macro-F1 from 0.376 to **0.453**. Around it sits a care platform: patient app, doctor review queue,
 instructions, questions, follow-ups with change detection, full audit log.
 
 ---
@@ -70,6 +71,20 @@ NV, SCCKA, VASC — of which 5 are malignant.
 | Trained on MILK10k, every number regenerable from the repo |
 
 ---
+
+## 3a. The specialist team (old design, now trained and measured)
+
+| Specialist | Source |
+|---|---|
+| S1 clinical-photo head · S2 dermoscopy head · S3 patient-details head | evidential heads trained on MILK10k |
+| S4 **PAD-UFES Model A** | the **original project's** image model, reused unchanged |
+| S5 similar-case vote | the 15 most similar training lesions |
+
+The **Devil's Advocate** profiles each one (quality Q, *learned* reliability R, uncertainty U,
+consistency C, missingness M, out-of-distribution distance). **Iterative
+diagnosis-adaptive fusion** — the old EM-style algorithm — combines them, using a
+diagnosis-conditioned trust table that is now *measured* instead of typed by hand. Details:
+[03_system.md](03_system.md) §4a, results: [05_results.md](05_results.md) §2–4.
 
 ## 4. The methodology (v3), in five steps
 

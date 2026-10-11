@@ -286,7 +286,34 @@ bundle, so the app silently ran in the old standard mode while the experiment re
 minimal mode. Caught because the demo deferred a case for low confidence, which minimal
 mode cannot do. The bundle now records it and the engine reads it.
 
-## 26. Still unknown
+## 26. The original project's model does not transfer to MILK10k
+
+PAD-UFES Model A — the original system's image specialist — reaches **21.9% accuracy** on
+MILK10k clinical photos (macro-F1 0.077), below always guessing BCC. It was trained on
+smartphone photos from another dataset (and under the flawed training documented in
+`reference/evaluation_integrity.md`). It stays in the team because the Devil's Advocate
+handles it correctly — learned reliability gives it ~2% weight — but it adds little.
+
+## 27. A plain average of the team is worse than one good fusion
+
+Averaging the five specialists gives macro-F1 0.317, below Dempster–Shafer of the three
+heads (0.376). Only the evidence-aware adaptive fusion (0.453) beats it. More models do not
+help by themselves; weighting them by evidence does.
+
+## 28. Occlusion and missing details still cause confident errors
+
+With the team, occluded photos keep 14% HIGH answers that miss 9.3% of cancers, and with
+details withheld the HIGH miss rate rises from 4.3% to 6.4%. Neither the evidential
+signals nor the quality statistics fully register these. Open.
+
+## 29. More confident answers means more false alarms
+
+With the team the HIGH tier grows from 35% to 60% of patients — and HIGH answers call 53% of
+the benign lesions they answer malignant (35% before). With a 5:2 cost ratio, "possibly
+cancer, see a dermatologist" is the cheaper statement under doubt. Safe, but it costs
+specificity.
+
+## 30. Still unknown
 
 Not yet answerable, and marked as such rather than guessed:
 

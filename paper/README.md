@@ -29,12 +29,13 @@ pdflatex main && bibtex main && pdflatex main && pdflatex main
 
 | Paper element | Source |
 |---|---|
-| Table I (classifier, dermoscopy value) | `outputs/milk_native/summary.json`, `runs/milk10k_resnet50_seed42/metrics.json` |
-| Table II (ablation) | `runs/milk10k_resnet50_seed42/metrics.json` → `availability_ablation` |
-| Tables III–IV (policy, tiers) | `outputs/eade_milk/cost_5/report.json` (`baselines`, `tiers`) |
-| Table V (cost sweep) | `outputs/eade_milk/cost_{2,3,5,10}/report.json` |
-| Table VI (stress) | `outputs/stress_milk/report.json` |
-| Reliability values | `outputs/eade_milk/cost_5/report.json` → `modality_reliability_by_class` |
-| AE, AUGRC, LTT λ̂ | `outputs/eade_milk/cost_5/report.json`, `cost_10/report.json` |
+| Specialists (Table II), fusion (Table III) | `outputs/milk_team/team_report.json` — `scripts/run_team.py` |
+| Reliability per diagnosis (Table IV) | `outputs/eade_team/cost_5/report.json` → `modality_reliability_by_class` |
+| Policy, tiers (Tables V–VI) | `outputs/eade_team/cost_5/report.json` (`baselines`, `tiers`) |
+| Cost sweep (Table VII) | `outputs/eade_team/cost_{2,3,5,10}/report.json` |
+| Stress (Table VIII) | `outputs/stress_milk/report_team.json` |
+| Heads-only ablation | `outputs/eade_milk/cost_5/report.json` |
+| Dermoscopy value (ignorance, AUROC) | `outputs/milk_native/summary.json` |
 
-Regenerate everything: see `docs/05_results.md` §9.
+Previous versions: `old1.tex` (agentic consensus), `old2.tex` (risk-controlled design).
+Regenerate everything: `docs/05_results.md` §10.

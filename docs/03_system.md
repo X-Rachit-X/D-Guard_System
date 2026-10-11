@@ -80,7 +80,7 @@ and write. The platform routes. Only a doctor's recorded verdict overrides the e
 Queue order: review → confirm → sign-off; within each, URGENT first, then oldest.
 **URGENT** = P(malignant) ≥ 0.30 or a malignant class still in the conformal set.
 
-On the test set: HIGH 35.3% · LOW 55.0% · DEFER 9.7% · dermoscopy requested 6.4%.
+On the test set: HIGH 60.2% · LOW 29.4% · DEFER 10.4% · dermoscopy requested 27.3%.
 
 ---
 
@@ -116,6 +116,45 @@ platform does not care which it is given. Missing pieces degrade gracefully: no 
 gallery; no LLM → structured report.
 
 ---
+
+## 4a. The specialist team, Devil's Advocate and adaptive fusion
+
+Code: `src/specialists/`, `src/fusion/adaptive.py`, `src/fusion/runtime.py`.
+Fitted by `scripts/run_team.py` on validation; used per case by the engine.
+
+**Specialists** — S1–S3 evidential heads (MILK10k), **S4 the original PAD-UFES Model A**
+(ResNet50 + channel attention + MHSA ViT; its 6 classes mapped onto MILK10k), S5 a vote of
+the 15 most similar training lesions.
+
+**Devil's Advocate** (per specialist, per case):
+
+| Signal | How it is computed |
+|---|---|
+| Quality Q | share of sharpness / brightness / contrast / glare inside the 5–95% range of training photos |
+| Reliability R | **logistic regression fitted on validation**: P(this specialist is right) from Q, U, confidence, agreement |
+| Uncertainty U | normalised entropy |
+| Consistency C | 1 − mean pairwise Jensen–Shannon divergence |
+| Missingness M | share of specialists absent |
+| OOD | Mahalanobis distance to the nearest class (Ledoit–Wolf), flagged above validation p99 |
+
+**Iterative diagnosis-adaptive fusion** (the old EM algorithm):
+
+```
+w(0) = softmax(a·log(Q·R))                         start from evidence quality × reliability
+p = Σ w·p_m ;  y = argmax p                        working diagnosis
+repeat ≤ 3:
+   π_m = measured P(specialist m right | diagnosis y)      E-step (measured, not hand-typed)
+   κ_m = 1 if m agrees with y else ρ                        conflict penalty
+   w = softmax(a·log(Q·R) + b·log π + g·log κ)              M-step
+   p = Σ w·p_m
+until y is stable and weights move < 0.05
+```
+
+a, b, g, ρ and a temperature are fitted on validation. The result feeds the decision
+policy; Dempster–Shafer ignorance and conflict still drive the gates. The app shows the
+**calibrated** confidence (probability the stated diagnosis is right) and the **consensus
+level** of the original four-level hierarchy (1 strong · 2 moderate · 3 uncertain ·
+4 critical conflict).
 
 ## 5. One real patient, end to end
 

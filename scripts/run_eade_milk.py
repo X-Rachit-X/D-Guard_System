@@ -279,6 +279,16 @@ def main() -> int:
         print(f"\nquality gate: {n_quality} HIGH answers downgraded to LOW "
               f"(severe photo-quality issue)")
 
+    # ---------------- OOD gate (Devil's Advocate, Mahalanobis; from run_team.py) ----
+    if "ood" in test:
+        from src.decision.policy import DeferReason as _DR
+        n_ood = 0
+        for i, d in enumerate(decisions):
+            if d.action == Action.PROCEED and d.tier != "LOW" and bool(test["ood"][i]):
+                d.tier, d.low_reason = "LOW", _DR.OUT_OF_DISTRIBUTION
+                n_ood += 1
+        print(f"OOD gate: {n_ood} HIGH answers downgraded to LOW (out of distribution)")
+
     act = np.array(final_action)
     pred = np.array(final_pred)
     tier = np.array([d.tier or "" for d in decisions])

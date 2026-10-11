@@ -45,7 +45,9 @@ from src.decision.policy import Action, Decision, ThreeActionPolicy
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUN = ROOT / "runs" / "milk10k_resnet50_seed42"
-DEFAULT_BUNDLE = ROOT / "outputs" / "eade_milk" / "cost_5" / "calibration.joblib"
+_TEAM_BUNDLE = ROOT / "outputs" / "eade_team" / "cost_5" / "calibration.joblib"
+_HEADS_BUNDLE = ROOT / "outputs" / "eade_milk" / "cost_5" / "calibration.joblib"
+DEFAULT_BUNDLE = _TEAM_BUNDLE if _TEAM_BUNDLE.exists() else _HEADS_BUNDLE
 DEFAULT_DATA = ROOT / "milk10k"
 MODALITY_ORDER = ("image", "dermoscopy", "meta", "text")
 DISPLAY = {"image": "clinical photo", "dermoscopy": "dermoscopy", "meta": "patient details"}
@@ -75,6 +77,9 @@ class NativeResult:
     classes: List[str] = field(default_factory=list)
     # Filled by src/agents/pipeline.py; empty when the engine is used alone.
     embeddings: Dict[str, Optional[np.ndarray]] = field(default_factory=dict)
+    # Specialist team (src/fusion/runtime.py); empty when no team bundle exists.
+    team: Dict = field(default_factory=dict)
+    raw_confidence: Optional[float] = None
     quality: Dict[str, Optional[Dict]] = field(default_factory=dict)
     similar: Dict = field(default_factory=dict)
     report: Dict = field(default_factory=dict)
@@ -96,6 +101,8 @@ class NativeResult:
             "patient_message": self.patient_message,
             "doctor_message": self.doctor_message,
             "quality": self.quality,
+            "team": {k: v for k, v in (self.team or {}).items() if k != "prob"},
+            "raw_confidence": self.raw_confidence,
             "similar": self.similar,
             "report": self.report,
         }
@@ -157,6 +164,12 @@ class NativeEngine:
         self.malignant = list(self.bundle["malignant"])
         self.malignant_names = [self.classes[i] for i in self.malignant]
         self.reliability = self.bundle["modality_reliability_by_class"]
+        # The specialist team is used when its bundle exists AND the decision
+        # bundle was calibrated on the team's probabilities.
+        self.team = None
+        from src.fusion.runtime import DEFAULT_TEAM, TeamRuntime
+        if DEFAULT_TEAM.exists() and Path(bundle_path) == _TEAM_BUNDLE:
+            self.team = TeamRuntime(self.classes)
 
     # ------------------------------------------------------------------ data
     def sample_lesions(self, split: str = "test", n: int = 12, seed: int = 0) -> List[Dict]:
@@ -245,6 +258,20 @@ class NativeEngine:
         conflict = float(torch.stack(conflicts).amax(0).item())
         u = float(fused["u"].item())
         prob = (fused["belief"] + fused["u"] / self.K)[0].cpu().numpy()
+        head_probs = {name: (ops[key]["belief"] + ops[key]["u"] / self.K)[0].cpu().numpy()
+                      for name, key in (("clinical", "image"), ("dermoscopy", "dermoscopy"),
+                                        ("metadata", "meta")) if pres[key]}
+        team = None
+        if self.team is not None:
+            from src.agents.quality import measure
+            q_keys = ("sharpness", "brightness", "contrast", "glare")
+            q_stats = {k: (np.array([measure(im)[q] for q in q_keys]) if im is not None else None)
+                       for k, im in (("clinical", clinical), ("dermoscopy", dermoscopy))}
+            z = {"clinical": z_img[0].cpu().numpy() if has_clin else None,
+                 "dermoscopy": z_derm[0].cpu().numpy() if has_derm else None,
+                 "meta": z_meta[0].cpu().numpy() if has_meta else None}
+            team = self.team.fuse_case(head_probs, clinical, dermoscopy, z, q_stats)
+            prob = team["prob"]                 # decide from the TEAM's fused distribution
 
         mod_u = {m: (float(ops[m]["u"].item()) if pres[m] else 1.0)
                  for m in ("image", "dermoscopy", "meta")}
@@ -253,6 +280,9 @@ class NativeEngine:
         ev = {m: 1.0 - mod_u[m] for m in mod_u if pres[m]}
         tot = sum(ev.values()) or 1.0
         weights = {DISPLAY[m]: round(v / tot, 3) for m, v in ev.items()}
+        if team is not None:
+            weights = team["weights"]
+            votes = team["votes"]
 
         stage = "B" if has_derm else "A"
         cal = self.bundle["stage_B" if has_derm else "stage_A"]
@@ -276,6 +306,20 @@ class NativeEngine:
                                      acquirable=["dermoscopy_image"] if has_clin else [],
                                      predicted_benefit={"dermoscopy_image": benefit})
 
+        raw_conf = decision.tentative_confidence
+        if team is not None:
+            from src.decision.policy import Action as _A, DeferReason as _DR
+            if team["ood"] and decision.action == _A.PROCEED and decision.tier != "LOW":
+                decision.tier, decision.low_reason = "LOW", _DR.OUT_OF_DISTRIBUTION
+                decision.gates = {**(decision.gates or {}), "out_of_distribution": True}
+            # Show the probability that the stated diagnosis is RIGHT (isotonic,
+            # fitted on validation), not the raw share of probability mass, which
+            # is spread over 11 classes and always looks low.
+            decision.tentative_confidence = team["calibrated_confidence"]
+            from src.fusion.runtime import consensus_level
+            team["consensus_level"] = consensus_level(decision, team["agreeing"],
+                                                      team["n_specialists"])
+
         tent = decision.tentative
         rel = {}
         if tent is not None:
@@ -296,6 +340,8 @@ class NativeEngine:
                 "clinical": z_img[0].cpu().numpy() if has_clin else None,
                 "meta": z_meta[0].cpu().numpy() if has_meta else None,
             },
+            team=team or {},
+            raw_confidence=raw_conf,
         )
 
     def _acq_features(self, prob, u, conflict, mod_u):

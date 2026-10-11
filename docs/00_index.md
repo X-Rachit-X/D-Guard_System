@@ -45,11 +45,13 @@ the paper in [../paper/main.tex](../paper/main.tex).
 
 **Trained?** Yes. Nothing else is required to run it.
 
-**How often does it answer?** 9 in 10 patients: 35% HIGH confidence, 55% LOW confidence
-(doctor confirms), 10% deferred because the inputs contradict.
+**How often does it answer?** 9 in 10 patients: 60% HIGH confidence, 29% LOW confidence
+(doctor confirms), 10% deferred because the evidence contradicts itself.
 
-**How good?** HIGH-confidence answers: 84% accurate, 1.8% missed cancers — vs 4.7% for the standard
-approach at the same coverage.
+**How good?** HIGH-confidence answers: 76% accurate on 11 classes, 3.0% missed cancers — vs
+9.3% for the standard approach at the same coverage. Team fusion: macro-F1 0.453.
 
-**Is fusion dynamic?** Yes — each input's weight is set per patient by its evidence and is
+**Is fusion dynamic?** Yes — the old project's iterative diagnosis-adaptive fusion runs over
+a five-specialist team (including the original PAD-UFES Model A); each specialist's weight
+is set per patient by its learned reliability, quality and the suspected diagnosis, and is
 shown for every case.

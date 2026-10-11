@@ -68,6 +68,13 @@ class ReportAgent:
                      f"{result.conflict:.2f}; weights "
                      + ", ".join(f"{k} {_pct(v)}" for k, v in result.fusion_weights.items())
                      + ".")
+        team = getattr(result, "team", None) or {}
+        if team:
+            from src.fusion.runtime import CONSENSUS_TEXT
+            lines.append(f"Specialist team: {team['agreeing']} of {team['n_specialists']} "
+                         f"agree; {CONSENSUS_TEXT.get(team.get('consensus_level'), '')}; "
+                         f"consistency {team['consistency']:.2f}"
+                         + ("; OUT OF DISTRIBUTION" if team.get("ood") else "") + ".")
         votes = result.modality_votes
         if votes and len(set(votes.values())) > 1:
             lines.append("Sources disagree: " + ", ".join(f"{k} says {v}" for k, v in votes.items()) + ".")

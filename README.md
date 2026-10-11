@@ -1,105 +1,89 @@
-# D-GUARD
+# DERMA-GUARD
 
-**Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral for Multimodal Dermatology AI**
+**Evidence-Aware Specialist Consensus with Risk-Controlled Evidence Acquisition and
+Deferral for Multimodal Dermatology**
 
 > ⚠️ Research prototype. Not clinically validated. Not for medical diagnosis.
 
-A skin-lesion AI trained on **MILK10k** (11 diagnoses, every lesion with a clinical photo
-**and** a dermoscopy image). For each patient it gives one of four outcomes — and around it
-sits a care platform where patients, doctors and follow-ups meet.
+A team of AI specialists looks at a skin lesion — the clinical photo, a dermoscopy image
+and the patient's details. A **Devil's Advocate** checks how good and how reliable each
+specialist's evidence is; an **iterative diagnosis-adaptive fusion** decides, per patient,
+whom to trust; and a calibrated policy gives one of four outcomes. A care platform connects
+patients, doctors and follow-ups around it.
 
 | | Outcome | Share of test patients |
 |---|---|---|
-| ✅ | **Answer — HIGH confidence** · every safety check passed | 35% |
-| 📷 | **Ask for dermoscopy** · then answer | 6% |
-| ⚠️ | **Answer — LOW confidence** · best diagnosis, clearly marked, a doctor confirms | 55% |
-| 🧑‍⚕️ | **Defer** · photo and details contradict each other | 10% |
+| ✅ | **Answer — HIGH confidence** · every safety check passed | **60%** |
+| 📷 | **Ask for dermoscopy** · then decide again | 27% |
+| ⚠️ | **Answer — LOW confidence** · best diagnosis, clearly marked, a doctor confirms | 29% |
+| 🧑‍⚕️ | **Defer** · the evidence contradicts itself | 10% |
 
-**9 in 10 patients get an answer.**
+**9 in 10 patients get an answer; 6 in 10 get a confident one.** Dataset: **MILK10k**
+(11 diagnoses, every lesion with a clinical photo **and** a dermoscopy image).
 
 ---
 
-## Results (787 held-out MILK10k lesions)
+## Results (787 held-out lesions)
 
-| | HIGH-confidence answers | Standard approach, same coverage |
+| | D-GUARD (HIGH answers) | Confidence threshold, same coverage |
 |---|---|---|
-| Accuracy (11 classes) | **83.8%** | 84.2% |
-| Balanced accuracy | **0.355** | 0.300 |
-| **Missed cancers** | **1.8%** | 4.7% |
-| Dermoscopy needed | 6.4% of patients | — |
+| Patients answered confidently | **60.2%** | 60.2% |
+| Accuracy (11 classes) | **76.2%** | 72.4% |
+| **Missed cancers** | **3.0%** | 9.3% |
+| Mean cost per case | **1.013** | 1.037 |
 
-- **A third of the missed cancers** at the same coverage and accuracy.
-- LOW-confidence answers: true diagnosis in the top 3 for **82%** of patients.
-- Dermoscopy raises cancer-vs-benign AUROC **0.80 → 0.86** and cuts the model's ignorance
-  **0.68 → 0.44**; a learned estimator decides *when* it is worth asking (acquisition
-  efficiency **+0.27** vs **+0.01** for "ask the most uncertain").
-- The missed-cancer bound is **statistically certified** (Learn-then-Test).
+- **Adaptive specialist fusion: macro-F1 0.376 → 0.453** (+20%) over evidential fusion alone.
+- A simple average of the same specialists is *worse* — the gain is the evidence-aware weighting.
+- The original project's **PAD-UFES Model A** is in the team; the Devil's Advocate learns it
+  transfers poorly to MILK10k and gives it ~2% weight.
+- Dermoscopy is requested selectively (acquisition efficiency **+0.33** vs −0.03 for
+  "ask the most uncertain").
+- Missed-cancer bound **certified** by Learn-then-Test; confidences shown are **calibrated**.
 
-Reported against us, and in the docs: combining all three inputs scores below the best pair
-(0.379 vs 0.403 macro-F1); on average cost, always answering is cheaper; one training seed.
-Everything: **[docs/05_results.md](docs/05_results.md)**.
+Reported against us: always answering is cheaper on mean cost; occluded photos and missing
+details still cause confident errors; one training seed. Full results:
+**[docs/05_results.md](docs/05_results.md)** · paper: **[paper/main.tex](paper/main.tex)**.
 
 ---
 
 ## How it works
 
 ```
- photo ──────┐   ┌──────────────────┐   ┌──────────────┐   ┌─────────────┐   HIGH answer
- dermoscopy ─┼──►│ evidential head  │──►│ Dempster–    │──►│ safety gates│──► ask dermoscopy
- details ────┘   │ per input:       │   │ Shafer fusion│   │ + cost      │   LOW answer
-                 │ belief +         │   │ belief,      │   │             │   defer
-                 │ ignorance u      │   │ ignorance,   │   │ conformal,  │   + tentative
-                 └──────────────────┘   │ CONFLICT     │   │ Learn-then- │     opinion
-                                        └──────────────┘   │ Test        │
-                                                           └─────────────┘
-   agents:   quality check · similar confirmed cases (RAG) · report + claim verifier
-   platform: patient app · doctor queue · questions · follow-ups + change check · audit · REST API
+  clinical photo ──► S1 evidential head ─┐
+  dermoscopy ──────► S2 evidential head ─┤      ┌───────────────────┐    ┌──────────────────┐
+  patient details ─► S3 evidential head ─┼────► │ DEVIL'S ADVOCATE  │──► │ ITERATIVE        │
+  clinical photo ──► S4 PAD-UFES Model A ┤      │ quality Q         │    │ DIAGNOSIS-       │
+  embeddings ──────► S5 similar-case vote┘      │ learned reliab. R │    │ ADAPTIVE FUSION  │
+                                                │ uncertainty U     │    │ (EM, measured    │
+                                                │ consistency C     │    │  priors, ≤3 its) │
+                                                │ missingness M     │    └────────┬─────────┘
+                                                │ OOD (Mahalanobis) │             │
+                                                └───────────────────┘             ▼
+   Dempster–Shafer ignorance + conflict ──────────────────────────────► SAFETY + COST POLICY
+   conformal (benign/malignant) · Learn-then-Test · quality & OOD gates · cost matrix
+                                                                                  │
+                         HIGH answer · ACQUIRE dermoscopy · LOW answer · DEFER ◄──┘
+   agents: quality check · librarian (similar confirmed cases) · report + claim verifier
+   platform: patient app · doctor queue · questions · follow-ups + change check · audit · API
 ```
 
-1. **Each input says how much it knows** — belief in each diagnosis plus ignorance `u`.
-2. **Dynamic fusion** — Dempster–Shafer: a missing input changes nothing; a weak one gets
-   little weight, per patient, automatically; disagreement becomes a separate number.
-3. **Calibrated gates** — no false reassurance while cancer is possible; a certified
-   threshold on missed cancers; contradictions go to a human.
-4. **Cheapest action** — answer, ask for dermoscopy, or review, priced with an explicit cost
-   matrix.
-
-From zero: **[docs/02_learning_path.md](docs/02_learning_path.md)**.
+From zero, in plain English: **[docs/02_learning_path.md](docs/02_learning_path.md)**.
 
 ---
 
 ## Run it
 
 ```bash
-pip install -r requirements.txt
-# Windows/Anaconda: set KMP_DUPLICATE_LIB_OK=TRUE
+pip install -r requirements.txt          # Windows/Anaconda: set KMP_DUPLICATE_LIB_OK=TRUE
 
-python scripts/demo_care.py            # four patients end to end (terminal)
-streamlit run app/dguard_app.py        # web app: patient / doctor / system
-uvicorn src.api:app --port 8000        # REST API, docs at /docs
-pytest tests -q                        # 217 tests, ~6 s
+python scripts/demo_care.py              # four patients end to end (terminal)
+streamlit run app/dguard_app.py          # web app: patient / doctor / system
+uvicorn src.api:app --port 8000          # REST API, docs at /docs
+pytest tests -q                          # 217 tests, ~6 s
 ```
 
-Needs `./milk10k` (the dataset) and `runs/milk10k_resnet50_seed42/checkpoints/best.pt`
-(the trained weights). To rebuild everything derived from them:
-
-```bash
-python scripts/milk_native_infer.py                    # ~2.5 min
-python scripts/run_eade_milk.py --missed-cost 5 --out outputs/eade_milk/cost_5
-python scripts/build_milk_index.py                     # ~3 min
-```
-
----
-
-## Status
-
-| | |
-|---|---|
-| Dataset | **MILK10k only** (PAD-UFES-20 belonged to the earlier prototype — [docs/01_overview.md](docs/01_overview.md) §2) |
-| Model | trained on Kaggle, runs locally, matches the Kaggle result |
-| Decision engine, tiers, agents, platform, app, API | ✅ working |
-| Required training or downloads | **none** |
-| Optional | seeds 7 & 2026, DermLIP encoder — [docs/09_todo.md](docs/09_todo.md) |
+Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted artifacts in
+`outputs/`. Regenerate everything: [docs/05_results.md](docs/05_results.md) §10.
 
 ---
 
@@ -117,10 +101,11 @@ python scripts/build_milk_index.py                     # ~3 min
 
 ## Positioning
 
-The individual techniques — evidential learning, Dempster–Shafer fusion, conformal
-prediction, Learn-then-Test, learning to defer — are established. The contribution is their
-combination into one calibrated decision with confidence tiers, the **measured** value of
-asking for dermoscopy on paired data, and a working care platform around it.
+Built from two designs: the original agentic multi-model consensus with diagnosis-adaptive
+fusion (`paper/old1.tex`), and the risk-controlled acquisition and deferral design
+(`paper/old2.tex`). The individual techniques are established; the contribution is their
+integration — learned, calibrated and measured on paired clinical–dermoscopic data — plus a
+working care platform.
 
 MILK10k is CC-BY-NC (credit: the MILK study team, ISIC). No images or patient data are in
 this repository.

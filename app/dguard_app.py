@@ -43,7 +43,9 @@ ACTION_STYLE = {
 def backend():
     from src.agents.pipeline import DGuardPipeline
     engine = DGuardPipeline.build()
-    svc = CareService(engine, CareStore(ROOT / "data" / "care" / "dguard_care.sqlite"),
+    import os
+    db = os.environ.get("DGUARD_DB", str(ROOT / "data" / "care" / "dguard_care.sqlite"))
+    svc = CareService(engine, CareStore(db),
                       upload_dir=ROOT / "data" / "care" / "uploads")
     samples = engine.sample_lesions("test", n=24, seed=7)
     return engine, svc, samples
@@ -96,9 +98,34 @@ def evidence_panel(result: dict):
               help="How strongly the sources contradict each other.")
     c4.metric("Stage", "with dermoscopy" if result["stage"] == "B" else "photo + details")
 
+    team = result.get("team") or {}
+    if team:
+        from src.fusion.runtime import CONSENSUS_TEXT
+        st.markdown("#### Specialist team (Devil's Advocate evidence profile)")
+        t1, t2, t3, t4 = st.columns(4)
+        t1.metric("Consensus", f"Level {team.get('consensus_level', '?')}",
+                  help=CONSENSUS_TEXT.get(team.get("consensus_level"), ""))
+        t2.metric("Agreeing specialists", f"{team['agreeing']} / {team['n_specialists']}")
+        t3.metric("Consistency C", f"{team['consistency']:.2f}",
+                  help="1 - mean pairwise Jensen-Shannon divergence between specialists")
+        t4.metric("Out of distribution", "YES" if team["ood"] else "no",
+                  help="Mahalanobis distance to the nearest training class, "
+                       "beyond the validation 99th percentile")
+        rows = []
+        for name, vote in team["votes"].items():
+            rows.append({"specialist": name, "says": vote,
+                         "quality Q": team["quality"].get(name),
+                         "reliability R (learned)": team["reliability"].get(name),
+                         "uncertainty U": team["uncertainty"].get(name),
+                         "fusion weight": team["weights"].get(name)})
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.caption(f"Iterative diagnosis-adaptive fusion converged after "
+                   f"{team['iterations']} refinement step(s). Confidence shown is "
+                   f"calibrated: the probability the stated diagnosis is correct.")
+
     l, r = st.columns(2)
     with l:
-        st.markdown("**Dynamic fusion weights** - share of evidence each source "
+        st.markdown("**Dynamic fusion weights** - how much each specialist counted "
                     "contributed to *this* case")
         w = result.get("fusion_weights") or {}
         if w:
@@ -389,11 +416,22 @@ else:
     st.title("System")
     t1, t2, t3 = st.tabs(["Research results", "Platform activity", "How it works"])
     with t1:
-        st.markdown("Native evidential model trained on MILK10k (Kaggle, seed 42), "
-                    "calibrated on 786 validation lesions, scored once on 787 test lesions.")
+        st.markdown("Specialist team (3 evidential heads trained on MILK10k, the original "
+                    "PAD-UFES Model A, a similar-case vote) fused by iterative "
+                    "diagnosis-adaptive fusion; calibrated on 786 validation lesions, scored "
+                    "once on 787 test lesions.")
+        tr = ROOT / "outputs" / "milk_team" / "team_report.json"
+        if tr.exists():
+            rep = json.loads(tr.read_text())
+            st.markdown("**Fusion methods (test split)**")
+            st.dataframe(pd.DataFrame(rep["fusion"]).T.round(3), width="stretch")
+            st.markdown("**Each specialist alone (test split)**")
+            st.dataframe(pd.DataFrame(rep["specialists"]).T.round(3), width="stretch")
         rows = []
         for cost in (5, 10):
-            f = ROOT / "outputs" / "eade_milk" / f"cost_{cost}" / "report.json"
+            f = ROOT / "outputs" / "eade_team" / f"cost_{cost}" / "report.json"
+            if not f.exists():
+                f = ROOT / "outputs" / "eade_milk" / f"cost_{cost}" / "report.json"
             if f.exists():
                 r = json.loads(f.read_text())
                 for b in r["baselines"]:

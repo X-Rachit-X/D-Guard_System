@@ -22,7 +22,8 @@ Everything below is **optional** and only makes the paper's numbers final or str
 | Similar-case index (3,667 training lesions) | ✅ `outputs/milk_rag/` |
 | Quality thresholds (fitted on MILK10k photos and dermoscopy) | ✅ |
 | Agents: quality, librarian, report + verifier | ✅ |
-| Confidence tiers (answers 90% of patients) | ✅ |
+| Specialist team (incl. original PAD-UFES Model A), Devil's Advocate, iterative adaptive fusion | ✅ `scripts/run_team.py` |
+| Confidence tiers (answers 90% of patients; 60% confidently) | ✅ |
 | Care platform, web app, REST API, terminal demo | ✅ |
 | Experiments: decision engine, baselines, cost sweep, stress test | ✅ |
 | Docs, panel guide, study plan, paper | ✅ |

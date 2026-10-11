@@ -30,6 +30,8 @@ REASON_TEXT = {
                                         "was added"),
     DeferReason.QUALITY: ("the photo quality is outside the range the system was "
                           "checked on"),
+    DeferReason.OUT_OF_DISTRIBUTION: ("this spot looks unlike the cases the system "
+                                      "learned from"),
 }
 
 ACQUIRE_TEXT = {

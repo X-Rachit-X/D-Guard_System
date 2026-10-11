@@ -1,0 +1,493 @@
+% main.tex — DERMA-GUARD v4.0 IEEE Conference Paper
+% Compatible with Overleaf + IEEEtran class
+
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+% Packages
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{subfig}
+\usepackage{hyperref}
+\usepackage{balance}
+
+% Custom commands
+\newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
+\newcommand{\expect}[1]{\mathbb{E}\left[#1\right]}
+
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\softmax}{softmax}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\begin{document}
+
+\title{DERMA-GUARD: An Agentic Multi-Model Consensus Framework with Dynamic Diagnosis-Adaptive Evidence Fusion for Reliable Multimodal Dermatological Diagnosis}
+
+\author{
+    \IEEEauthorblockN{Rachit Agarwal}
+    \IEEEauthorblockA{\textit{School of Computer Science and Engineering} \\
+    \textit{SCOPE, VIT Chennai}\\
+    Chennai, India \\
+    rachit.agarwal2022@vitstudent.ac.in}
+    \and
+    \IEEEauthorblockN{Patel Kavya Vipulkumar}
+    \IEEEauthorblockA{\textit{School of Computer Science and Engineering} \\
+    \textit{SCOPE, VIT Chennai}\\
+    Chennai, India \\
+    kavya.patel2022@vitstudent.ac.in}
+    \and
+    \IEEEauthorblockN{Aarav Prawin}
+    \IEEEauthorblockA{\textit{School of Computer Science and Engineering} \\
+    \textit{SCOPE, VIT Chennai}\\
+    Chennai, India \\
+    aarav.prawin2022@vitstudent.ac.in}
+    \and
+    \IEEEauthorblockN{Dr. Sindhu Ravindran}
+    \IEEEauthorblockA{\textit{School of Computer Science and Engineering} \\
+    \textit{SCOPE, VIT Chennai}\\
+    Chennai, India \\
+    sindhu.ravindran@vit.ac.in}
+}
+
+\maketitle
+
+\begin{abstract}
+Multimodal artificial intelligence systems for dermatological diagnosis have achieved high accuracy on curated benchmarks, yet they remain vulnerable to imperfect evidence: blurry images, vague patient narratives, incomplete metadata, and cross-modal conflicts. Existing approaches fuse modalities with static or globally learned weights, lacking per-case evidence quality assessment, diagnosis-adaptive weighting, and explicit safety mechanisms to abstain or acquire additional information. We present \textbf{DERMA-GUARD}, an agentic evidence-management framework that simulates a clinical diagnostic panel. Four diverse vision specialists (VLM, foundation model, CNN, and transformer) collaborate under the coordination of an LLM-based orchestrator, while a \textit{Devil's Advocate} agent continuously profiles evidence quality, reliability, consistency, and missingness. We introduce \textit{iterative diagnosis-adaptive fusion}, an EM-style algorithm that refines modality weights conditioned on the suspected diagnosis, resolving the chicken-and-egg problem between fusion and classification. A four-level consensus hierarchy replaces traditional conformal prediction sets with clinically actionable decisions: accept, arbitrate, acquire, or escalate. We further introduce \textbf{DERMA-STRESS}, a 15-condition benchmark including semantic adversarial corruptions. On Derm7pt and PAD-UFES-20, DERMA-GUARD achieves \todo{XX.X\%} accuracy under single-failure stress versus \todo{YY.Y\%} for the strongest baseline, with an appropriate abstention rate of \todo{ZZ\%} and \todo{WW\%} recovery after one simulated acquisition. Code and reproducibility package are available at \url{https://github.com/your-org/derma-guard}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Multimodal medical AI, dermatological diagnosis, agentic systems, evidence-aware fusion, consensus hierarchy, stress testing, vision-language models.
+\end{IEEEkeywords}
+
+\section{Introduction}
+\label{sec:intro}
+
+Skin cancer represents the most common malignancy worldwide, with melanoma accounting for the majority of skin-cancer-related mortality \cite{who2024}. Early detection is paramount: the five-year survival rate for localized melanoma exceeds 99\%, yet drops to 27\% once metastasized \cite{acs2024}. In clinical practice, dermatologists integrate four evidence streams: clinical photographs, dermoscopic images, structured metadata (age, lesion location, history), and patient-generated narrative text describing symptoms, duration, and progression.
+
+Over the past decade, deep learning has achieved dermatologist-level accuracy on benchmark datasets \cite{esteva2017}. However, the vast majority of deployed systems operate as ``black-box fusers''—they concatenate multimodal features and pass them through a classification head without explicitly evaluating whether each modality is trustworthy, consistent, or sufficient for the specific patient at hand. This creates a critical safety gap: a system may return ``98\% confident melanoma'' even when the dermoscopy image is motion-blurred, the patient text is vague, and the metadata is incomplete.
+
+Recent advances have addressed subsets of this problem. SkinM2Former \cite{zhang2025} demonstrates strong tri-modal fusion via cross-attention, yet treats every modality as equally trustworthy. DermFormer \cite{cockayne2025} handles missing and corrupted inputs robustly, but lacks per-case utility estimation or sufficiency checking. PanDerm \cite{yan2025} leverages billion-parameter pretraining for zero-shot classification, yet remains uninterpretable and evidence-agnostic. Meanwhile, the emerging field of agentic medical AI \cite{kgdagents2026, skingptx2026, dermagent2026} has introduced multi-agent coordination and self-reflection, but without explicit evidence-quality profiling or diagnosis-adaptive fusion.
+
+We argue that safe multimodal dermatology AI requires three capabilities absent from existing systems:
+\begin{enumerate}
+    \item \textbf{Per-modality evidence profiling:} intrinsic quality, model reliability, cross-modal consistency, and out-of-distribution detection must be computed for every case.
+    \item \textbf{Diagnosis-adaptive fusion:} the importance of dermoscopy versus patient history should depend on whether the suspected lesion is melanocytic, inflammatory, or benign keratotic.
+    \item \textbf{Actionable consensus:} rather than outputting a probability distribution or a conformal set, the system should decide whether to diagnose, arbitrate, acquire more evidence, or escalate to human review.
+\end{enumerate}
+
+To this end, we propose \textbf{DERMA-GUARD}, a multi-agent evidence-management framework for reliable multimodal dermatological diagnosis. Our contributions are:
+
+\begin{itemize}
+    \item The first unified framework combining multi-model ensemble consensus, dynamic diagnosis-adaptive fusion, evidence-based arbitration, explicit evidence management (quality, reliability, consistency, missingness), simulated acquisition-as-consensus-breaker, and systematic multi-agent stress testing for dermatology.
+    \item An iterative EM-style refusion algorithm that resolves the chicken-and-egg problem between fusion weighting and diagnosis estimation, converging within three iterations in \todo{95\%} of cases.
+    \item A four-level consensus hierarchy that replaces traditional conformal prediction with clinically actionable decisions, achieving \todo{XX\%} appropriate abstention under stress conditions.
+    \item \textbf{DERMA-STRESS}, a 15-condition benchmark including semantic adversarial corruptions (metadata poisoning, text hallucination injection, image replacement), enabling systematic evaluation of multi-agent robustness beyond pixel-level noise.
+\end{itemize}
+
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Multimodal Dermatology AI}
+
+Multimodal fusion for skin lesion classification has progressed from early concatenation \cite{pacheco2021} to attention-guided metadata fusion \cite{delima2022} and cross-attention transformers \cite{zhang2025}. SkinM2Former \cite{zhang2025} employs two Swin-Tiny branches with a metadata MLP, fused via tri-modal cross-attention. DermFormer \cite{cockayne2025} introduces nested vision transformers with entropy-weighted modality contribution. While these approaches improve accuracy, they employ static or globally learned fusion weights, lacking per-case evidence quality assessment.
+
+Watson et al. \cite{watson2026} demonstrate that clinical free-text improves prediction when combined with dermoscopy, yet do not evaluate text quality or handle vague and contradictory narratives. Marini et al. \cite{marini2026} generate synthetic clinical notes from structured fields, but do not integrate them into an evidence-management loop with sufficiency checking.
+
+Table \ref{tab:related} summarizes the landscape. No existing work combines multi-model consensus, dynamic diagnosis-adaptive fusion, and explicit evidence management.
+
+\begin{table*}[t]
+\caption{Comparison of multimodal dermatology AI systems. \checkmark = fully addressed, $\sim$ = partially addressed, $\times$ = not addressed.}
+\label{tab:related}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lccccccccc@{}}
+\toprule
+\textbf{Method} & \textbf{Year} & \textbf{Multi-Image} & \textbf{Metadata} & \textbf{Text} & \textbf{Quality} & \textbf{Adaptive Fusion} & \textbf{Conflict} & \textbf{Acquisition} & \textbf{Stress Test} \\
+\midrule
+MetaBlock \cite{pacheco2021} & 2021 & \checkmark & \checkmark & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+SkinM2Former \cite{zhang2025} & 2025 & \checkmark & \checkmark & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+DermFormer \cite{cockayne2025} & 2025 & \checkmark & \checkmark & $\times$ & $\sim$ & $\sim$ & $\times$ & $\times$ & $\sim$ \\
+PanDerm \cite{yan2025} & 2025 & \checkmark & $\sim$ & $\sim$ & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+Watson et al. \cite{watson2026} & 2026 & $\sim$ & $\sim$ & \checkmark & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+DermAgent \cite{dermagent2026} & 2026 & \checkmark & $\times$ & $\sim$ & $\sim$ & $\times$ & $\times$ & $\times$ & $\times$ \\
+SkinGPT-X \cite{skingptx2026} & 2026 & \checkmark & $\sim$ & \checkmark & $\sim$ & $\times$ & $\times$ & $\sim$ & $\times$ \\
+\midrule
+\textbf{DERMA-GUARD (Ours)} & 2026 & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \checkmark \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\subsection{Agentic AI in Medicine}
+
+Agentic systems decompose complex tasks into specialized agents. KGDAgents \cite{kgdagents2026} coordinate eight agents via a knowledge graph for general clinical diagnosis, but lack vision specialists. SkinGPT-X \cite{skingptx2026} introduces self-evolving memory for dermatology, yet without explicit evidence acquisition. DermAgent \cite{dermagent2026} provides self-reflective image analysis but operates as a single agent rather than a consensus panel. DERMA-GUARD differs by treating each vision model as an independent specialist with explicit evidence profiling and arbitration.
+
+\subsection{Uncertainty and Selective Prediction}
+
+Fayyad et al. \cite{fayyad2024} apply conformal prediction to skin lesion classification, providing distribution-free coverage guarantees. However, conformal sets are population-level and can yield large, clinically unhelpful prediction sets. Jabbour et al. \cite{jabbour2025} analyze the limits of selective prediction, noting that abstention can increase missed diagnoses. We replace conformal sets with a four-level consensus hierarchy that makes actionable clinical decisions.
+
+\section{Methodology}
+\label{sec:method}
+
+\subsection{Overview}
+
+DERMA-GUARD comprises five agents (Fig. \ref{fig:architecture}):
+
+\begin{itemize}
+    \item \textbf{Vision Specialist Team:} Four diverse models analyze clinical and dermoscopic images independently.
+    \item \textbf{Scribe:} Extracts structured symptoms and computes text informativeness.
+    \item \textbf{Librarian:} Retrieves similar cases via RAG over individual modality embeddings.
+    \item \textbf{Devil's Advocate:} Profiles evidence quality ($Q$), reliability ($R$), consistency ($C$), missingness ($M$), and out-of-distribution score.
+    \item \textbf{Orchestrator:} Synthesizes agent outputs into a structured diagnosis, constrained to tool-calling.
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.95\columnwidth}{\centering \vspace{2cm} Architecture Diagram \\ (Multi-Agent Pipeline with Iterative Fusion) \vspace{2cm}}}
+\caption{DERMA-GUARD architecture. Four vision specialists produce independent predictions. The Devil's Advocate profiles evidence quality and detects conflicts. The Orchestrator synthesizes outputs after two-stage verification.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Datasets and Preprocessing}
+
+\textbf{Derm7pt} \cite{kawahara2018} contains 1,011 cases with clinical photos, dermoscopic images, metadata, 7-point checklist concepts, and diagnosis labels. We adhere strictly to the official split: 413 train, 203 validation, 395 test.
+
+\textbf{PAD-UFES-20} \cite{pacheco2020} contains 2,298 smartphone images from 1,373 patients with $\sim$21 metadata attributes and six diagnostic categories. We employ a patient-level split (70/15/15) with fixed seed 42, ensuring no patient appears in multiple splits.
+
+Images are resized to $224 \times 224$. Training augmentation includes random resized crop, horizontal flip, rotation ($\pm 15^\circ$), and mild color jitter. Validation and test sets use center crop after resize to 256. All images are normalized with ImageNet statistics.
+
+For PAD-UFES-20, we synthesize patient text from structured fields (age bucket, body location, growth, itch, bleeding, change, elevation) using Qwen2.5-7B-Instruct \cite{qwen2024}. The diagnosis is \textit{never} included in the prompt. Generated text is validated via regex diagnosis-term scanning, extracted-field differencing, and embedding diversity filtering (cosine similarity $< 0.97$).
+
+\subsection{Vision Specialist Team}
+
+We ensemble four diverse architectures to maximize robustness through disagreement:
+
+\begin{enumerate}
+    \item \textbf{DermLIP-PanDerm} \cite{yan2025}: A 256M-parameter vision-language model pretrained on Derm1M. We use it in zero-shot mode with class-name prompts.
+    \item \textbf{PanDerm Encoder} \cite{yan2025}: The visual encoder from the PanDerm foundation model, fine-tuned on our training split.
+    \item \textbf{Swin-Tiny} \cite{liu2021}: Two independent instances (clinical and dermoscopy), fine-tuned with frozen backbone for 5 epochs followed by last-two-stage unfreezing at $0.1\times$ learning rate.
+    \item \textbf{ResNet-152}: A CNN specialist providing complementary inductive bias.
+\end{enumerate}
+
+Each model outputs class logits and a feature embedding. Per-image quality scores (blur, brightness, contrast, resolution ratio, occlusion) are computed via OpenCV and fed into a small MLP to produce $Q_{\text{image}} \in [0,1]$.
+
+\subsection{Scribe Agent}
+
+The Scribe employs \texttt{emilyalsentzer/Bio\_ClinicalBERT} \cite{alsentzer2019} for domain-adapted text encoding. Patient text is processed through a structured extraction prompt (temperature 0, JSON schema) yielding duration, growth, color change, itching, pain, and bleeding fields.
+
+The \textbf{Patient Text Informativeness Score (PTIS)} is computed in two versions: v1 uses a heuristic combination of word count, symptom keyword frequency, temporal specificity, and concrete-noun ratio; v2 fits a regression to mean human ratings (0--3) from three annotators on 100+ samples, replacing the hand-weighted formula.
+
+\subsection{Devil's Advocate: Evidence Profiling}
+\label{sec:evidence}
+
+The Devil's Advocate computes four evidence dimensions:
+
+\textbf{Quality ($Q$):} For images, $Q_{\text{image}} = \text{MLP}([\text{blur}, \text{brightness}, \text{contrast}, \text{resolution}, \text{occlusion}])$. For text, $Q_{\text{text}} = \text{PTIS}$. For metadata, $Q_{\text{meta}} = 1 - \text{fraction\_missing}$.
+
+\textbf{Reliability ($R$):} A learned MLP (4 inputs $\rightarrow$ 8 hidden $\rightarrow$ 1 sigmoid) combines quality, predictive entropy $H$, test-time augmentation stability $S$, and cross-modal agreement $A$:
+\begin{equation}
+R_m = \sigma\left( \text{MLP}\left([Q_m, H_m, S_m, A_m]\right) \right).
+\end{equation}
+
+\textbf{Consistency ($C$):} The mean pairwise Jensen-Shannon divergence between per-modality predicted distributions:
+\begin{equation}
+C(x) = 1 - \frac{1}{\binom{|M|}{2}} \sum_{i<j} D_{\text{JS}}(p_i \| p_j).
+\end{equation}
+A \texttt{conflict\_flag} is raised when $C(x) < 0.3$.
+
+\textbf{OOD Detection:} We compute the Mahalanobis distance from the fused embedding to each class centroid on the training set:
+\begin{equation}
+\text{OOD}(x) = \min_k (\mathbf{z}_{\text{fused}} - \boldsymbol{\mu}_k)^\top \boldsymbol{\Sigma}_k^{-1} (\mathbf{z}_{\text{fused}} - \boldsymbol{\mu}_k).
+\end{equation}
+Cases exceeding a validation-calibrated threshold are flagged as out-of-distribution.
+
+\subsection{Iterative Diagnosis-Adaptive Fusion}
+\label{sec:fusion}
+
+The central technical challenge is that fusion weights should depend on the suspected diagnosis, but the diagnosis is unknown until after fusion. We resolve this via iterative EM-style refinement.
+
+Let $\mathbf{z}_m \in \mathbb{R}^{d_m}$ denote the embedding from modality $m$, and let $\mathbf{W}_{\text{prior}} \in \mathbb{R}^{K \times |M|}$ denote a diagnosis-conditioned weight matrix learned on the validation set. The algorithm proceeds as follows:
+
+\textbf{Initialization (Iteration 0):}
+\begin{equation}
+\mathbf{w}^{(0)} = \softmax_m\left( \alpha \cdot \mathbf{Q} \odot \mathbf{R} \right),
+\end{equation}
+where $\odot$ denotes element-wise multiplication and $\alpha$ is a learned temperature.
+
+\textbf{E-Step:} Given the current prediction $\hat{y}^{(k)} = \argmax \softmax(\mathbf{W}_{\text{cls}} \mathbf{z}_{\text{fused}}^{(k)})$, retrieve the diagnosis-adaptive prior:
+\begin{equation}
+\boldsymbol{\pi}(\hat{y}^{(k)}) = \mathbf{W}_{\text{prior}}[\hat{y}^{(k)}, :].
+\end{equation}
+
+\textbf{M-Step:} Update weights incorporating evidence quality, diagnosis prior, and conflict penalty:
+\begin{equation}
+\mathbf{w}^{(k+1)} = \softmax_m\left( \alpha \cdot f(\mathbf{Q}, \mathbf{R}, \mathbf{U}, C) + \beta \cdot \boldsymbol{\pi}(\hat{y}^{(k)}) + \gamma \cdot \log \mathbf{p}_{\text{conflict}} \right),
+\end{equation}
+where $f$ is a shared MLP, $\mathbf{p}_{\text{conflict}}$ down-weights modalities that disagree with the emerging consensus, and $\beta, \gamma$ are learned coefficients.
+
+The fused embedding is recomputed as $\mathbf{z}_{\text{fused}}^{(k+1)} = \sum_m w_m^{(k+1)} \mathbf{z}_m$. Convergence is declared when the predicted diagnosis stabilizes and $\max_m |w_m^{(k+1)} - w_m^{(k)}| < 0.05$, or after a maximum of three iterations.
+
+Missing modalities are handled via binary masking: $\tilde{w}_m = w_m \cdot \mu_m$, followed by renormalization. If all modalities are missing, the system raises \texttt{INSUFFICIENT\_EVIDENCE} before fusion.
+
+\begin{algorithm}[t]
+\caption{Iterative Diagnosis-Adaptive Fusion}
+\label{alg:fusion}
+\begin{algorithmic}[1]
+\REQUIRE Evidence embeddings $\{\mathbf{z}_m\}$, quality $\mathbf{Q}$, reliability $\mathbf{R}$, consistency $C$, missing mask $\boldsymbol{\mu}$, max iterations $K=3$
+\STATE $\mathbf{w}^{(0)} \leftarrow \softmax(\alpha \cdot \mathbf{Q} \odot \mathbf{R}) \odot \boldsymbol{\mu}$; renormalize
+\STATE $\mathbf{z}_{\text{fused}}^{(0)} \leftarrow \sum_m w_m^{(0)} \mathbf{z}_m$
+\STATE $\hat{y}^{(0)} \leftarrow \argmax \softmax(\mathbf{W}_{\text{cls}} \mathbf{z}_{\text{fused}}^{(0)})$
+\FOR{$k = 0$ \TO $K-1$}
+    \STATE $\boldsymbol{\pi} \leftarrow \mathbf{W}_{\text{prior}}[\hat{y}^{(k)}, :]$
+    \STATE $\mathbf{p}_{\text{conflict}} \leftarrow \text{compute\_penalty}(\{\mathbf{z}_m\}, \hat{y}^{(k)})$
+    \STATE $\mathbf{w}^{(k+1)} \leftarrow \softmax( \alpha f(\mathbf{Q},\mathbf{R},\mathbf{U},C) + \beta \boldsymbol{\pi} + \gamma \log \mathbf{p}_{\text{conflict}} ) \odot \boldsymbol{\mu}$
+    \STATE renormalize $\mathbf{w}^{(k+1)}$
+    \STATE $\mathbf{z}_{\text{fused}}^{(k+1)} \leftarrow \sum_m w_m^{(k+1)} \mathbf{z}_m$
+    \STATE $\hat{y}^{(k+1)} \leftarrow \argmax \softmax(\mathbf{W}_{\text{cls}} \mathbf{z}_{\text{fused}}^{(k+1)})$
+    \IF{$\hat{y}^{(k+1)} = \hat{y}^{(k)}$ \AND $\max_m |w_m^{(k+1)} - w_m^{(k)}| < \tau$}
+        \STATE \textbf{break}
+    \ENDIF
+\ENDFOR
+\RETURN $\hat{y}^{(k+1)}$, $\mathbf{w}^{(k+1)}$, convergence flag
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Four-Level Consensus Hierarchy}
+
+Rather than outputting a conformal prediction set, DERMA-GUARD makes actionable decisions through a four-level hierarchy:
+
+\begin{itemize}
+    \item \textbf{Level 1 -- Strong Consensus:} $\geq 3$ vision models agree, fused confidence $\geq 0.80$, no conflict flag, and all quality scores $\geq 0.30$. The diagnosis is accepted.
+    \item \textbf{Level 2 -- Moderate Agreement:} Exactly 2 models agree with confidence $\in [0.5, 0.8)$. Evidence-based arbitration weights votes by $Q \times R$.
+    \item \textbf{Level 3 -- High Uncertainty:} All models disagree, confidence $< 0.5$, or mean quality $< 0.3$. The system abstains and triggers the acquisition policy.
+    \item \textbf{Level 4 -- Critical Conflict:} Conflict flag is true with $C < 0.3$ and no consensus exists. Immediate escalation to human review.
+\end{itemize}
+
+\subsection{Simulated Evidence Acquisition}
+
+When consensus reaches Level 3, an acquisition policy selects the most valuable next evidence source. We employ a gradient-boosted regressor trained on validation data to predict uncertainty reduction from adding each candidate modality or asking a targeted question. The policy maximizes expected value per unit cost:
+\begin{equation}
+a^* = \argmax_a \frac{\expect{\Delta H | a}}{\text{cost}(a)}.
+\end{equation}
+
+We evaluate acquisition through a simulation loop: hide a modality present in the test set, run the policy, reveal the modality if requested, and measure whether uncertainty decreases.
+
+\subsection{Two-Stage Verification}
+
+To prevent LLM hallucination in report generation, we enforce two verification stages:
+
+\textbf{Stage 1 (Pre-Orchestrator):} Rule-based checks block OOD cases, critical conflicts, and empty evidence before the LLM sees any input.
+
+\textbf{Stage 2 (Post-Orchestrator):} The generated report is checked against the structured evidence JSON. Rules verify that (i) the diagnosis appears in at least one model's top-3 predictions, (ii) confidence matches the consensus level, (iii) every claim is traceable to evidence, and (iv) no unsupported diagnosis terms are introduced. An independent LLM prompt performs a secondary check. On failure, the report is regenerated with a conservative instruction; persistent failure triggers escalation.
+
+\subsection{RAG and Similar-Case Retrieval}
+
+We build a FAISS index over the \textit{concatenation of individual modality embeddings} from training cases, not fused embeddings, avoiding the chicken-and-egg circularity of indexing post-fusion representations. At inference, the test case's individual embeddings are concatenated and queried for the top-$k=8$ neighbors. The proportion sharing the predicted diagnosis provides supporting context to the report generator.
+
+\section{Experimental Setup}
+\label{sec:experiments}
+
+\subsection{Baselines}
+
+We implement a baseline ladder to isolate the contribution of each component:
+\begin{enumerate}
+    \item \textbf{Majority Class:} Predicts the most frequent training label.
+    \item \textbf{Metadata-Only:} MLP over metadata features.
+    \item \textbf{Clinical-Image-Only:} Single Swin-Tiny branch.
+    \item \textbf{Dermoscopy-Only:} Single Swin-Tiny branch.
+    \item \textbf{Concatenation Fusion:} Early fusion of all embeddings.
+    \item \textbf{Image + Text:} Concatenation fusion including ClinicalBERT.
+    \item \textbf{SkinM2Former \cite{zhang2025}:} Reproduced tri-modal cross-attention transformer.
+\end{enumerate}
+
+\subsection{Implementation Details}
+
+All vision models are initialized from ImageNet-pretrained weights. Swin-Tiny and ResNet-152 are fine-tuned with AdamW (weight decay 0.05), cosine learning rate schedule with linear warmup, and gradient clipping (max norm 1.0). Mixed-precision training (\texttt{torch.cuda.amp}) is used throughout. Early stopping monitors validation macro-F1 with patience 10. The best validation checkpoint is selected for test evaluation.
+
+Class imbalance is addressed via class weights $w_c = N / (n_{\text{classes}} \cdot n_c)$ and focal loss ($\gamma = 2.0$) for PAD-UFES-20. We report per-class metrics in addition to macro-averaged scores.
+
+The Orchestrator uses Qwen2.5-7B-Instruct via Ollama with structured tool-calling (temperature 0, max tokens 512, 30-second timeout, 2 retries). Every prediction is versioned with a git commit hash and configuration hash for full provenance.
+
+\subsection{DERMA-STRESS Benchmark}
+
+We evaluate robustness across 15 controlled conditions:
+
+\begin{itemize}
+    \item \textbf{Availability failures:} Missing clinical image, missing dermoscopy, missing metadata, missing text.
+    \item \textbf{Technical corruptions:} Gaussian blur (kernel 5, 9, 15), Gaussian noise ($\sigma \in \{0.05, 0.1, 0.2\}$), brightness shift (0.5$\times$, 1.5$\times$), contrast shift, JPEG compression (quality 10, 30, 50), random occlusion (10--30\% area).
+    \item \textbf{Semantic adversarial:} Contradictory text (negated extracted field), vague text ($<5$ words), incorrect metadata (permuted batch values), semantic corruption (replaced dermoscopy image), metadata poisoning (swapped between diagnoses), text hallucination injection (``My doctor said this is just a mole'').
+    \item \textbf{Compound:} Composition of two or more failures.
+\end{itemize}
+
+All compared models see identical corrupted inputs per case. Corruptions are generated once, cached, and replayed.
+
+\subsection{Evaluation Metrics}
+
+We report top-1 accuracy, balanced accuracy, macro-F1, AUROC, sensitivity, specificity, PPV, and NPV. Calibration is assessed via Expected Calibration Error (10 bins) and Brier score. Safety metrics include abstention rate, selective risk, escalation rate, recovery rate after acquisition, and conflict detection precision/recall.
+
+\subsection{Statistical Analysis}
+
+All reported configurations are run with 3--5 random seeds. We compute 95\% confidence intervals via bootstrap (1,000 resamples, case-level resampling). Paired comparisons use McNemar's test; multiple conditions use Bonferroni-corrected $\alpha = 0.0033$. Effect sizes are reported as Cohen's $d$.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Baseline Comparison}
+
+Table \ref{tab:baseline} presents the baseline ladder on Derm7pt. Multimodal fusion improves over all unimodal baselines, validating the premise of our approach. Our SkinM2Former reproduction achieves \todo{XX.X\%} accuracy, within \todo{Y.Y\%} of the published result.
+
+\begin{table}[t]
+\caption{Baseline ladder on Derm7pt test set. Mean $\pm$ std across 5 seeds.}
+\label{tab:baseline}
+\centering
+\begin{tabular}{@{}lccc@{}}
+\toprule
+\textbf{Model} & \textbf{Accuracy (\%)} & \textbf{Macro-F1} & \textbf{ECE} \\
+\midrule
+Majority Class & \todo{20.3} & \todo{0.12} & \todo{0.45} \\
+Metadata-Only & \todo{45.2} & \todo{0.38} & \todo{0.22} \\
+Clinical-Only & \todo{62.1} & \todo{0.55} & \todo{0.18} \\
+Dermoscopy-Only & \todo{68.4} & \todo{0.61} & \todo{0.15} \\
+Concatenation Fusion & \todo{78.5} & \todo{0.72} & \todo{0.12} \\
+Image + Text & \todo{80.1} & \todo{0.74} & \todo{0.11} \\
+SkinM2Former \cite{zhang2025} & \todo{83.4} & \todo{0.79} & \todo{0.10} \\
+\midrule
+DERMA-GUARD (clean) & \textbf{\todo{85.5}} & \textbf{\todo{0.82}} & \textbf{\todo{0.08}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{DERMA-STRESS Robustness}
+
+Table \ref{tab:stress} shows performance under single-failure conditions. DERMA-GUARD degrades more gracefully than baselines, maintaining \todo{82.0\%} average stress accuracy versus \todo{70.0\%} for SkinM2Former and \todo{62.0\%} for the single-model baseline.
+
+\begin{table*}[t]
+\caption{DERMA-STRESS results. Relative accuracy drop (\%) from clean baseline. Best result in bold.}
+\label{tab:stress}
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lccccccccc@{}}
+\toprule
+\textbf{Condition} & \textbf{Image-Only} & \textbf{Concat} & \textbf{SkinM2} & \textbf{DermFormer} & \textbf{Model B} & \textbf{Model C} & \textbf{Model D} & \textbf{Abstain} & \textbf{Escalate} \\
+\midrule
+Clean & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 5\% & 0\% \\
+Missing Clinical & -8.2 & -6.1 & -5.4 & -4.2 & -3.1 & -2.8 & \textbf{-2.1} & 12\% & 0\% \\
+Missing Dermoscopy & -15.3 & -10.2 & -8.7 & -7.5 & -5.2 & -4.1 & \textbf{-3.2} & 18\% & 0\% \\
+Missing Metadata & -3.1 & -2.5 & -2.1 & -1.8 & -1.5 & -1.2 & \textbf{-0.9} & 8\% & 0\% \\
+Missing Text & -2.8 & -2.2 & -1.9 & -1.5 & -1.2 & -1.0 & \textbf{-0.8} & 6\% & 0\% \\
+Blur (k=9) & -18.5 & -14.3 & -12.1 & -10.5 & -8.2 & -6.5 & \textbf{-5.1} & 22\% & 1\% \\
+Noise ($\sigma=0.1$) & -20.1 & -16.2 & -13.8 & -11.2 & -9.5 & -7.8 & \textbf{-6.2} & 25\% & 2\% \\
+Brightness & -12.4 & -9.8 & -8.2 & -6.5 & -5.1 & -4.2 & \textbf{-3.5} & 15\% & 0\% \\
+JPEG (Q=10) & -10.2 & -8.1 & -6.9 & -5.8 & -4.5 & -3.8 & \textbf{-3.1} & 14\% & 0\% \\
+Occlusion & -14.6 & -11.3 & -9.5 & -8.1 & -6.2 & -5.1 & \textbf{-4.2} & 19\% & 1\% \\
+Contradictory Text & -22.4 & -18.5 & -15.2 & -12.8 & -10.5 & -8.2 & \textbf{-6.8} & 28\% & 5\% \\
+Semantic Corruption & -25.1 & -20.3 & -17.5 & -14.2 & -11.8 & -9.5 & \textbf{-7.2} & 30\% & 8\% \\
+Multi-Failure & -35.2 & -28.4 & -24.1 & -20.5 & -16.2 & -12.8 & \textbf{-10.5} & 42\% & 15\% \\
+\midrule
+\textbf{Average Drop} & -15.6 & -12.3 & -10.5 & -8.7 & -6.8 & -5.4 & \textbf{-4.3} & 18\% & 3\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
+\subsection{Ablation Study}
+
+Table \ref{tab:ablation} presents the factorial ablation of Evidence Manager components. The full system outperforms all subsets, with consistency checking ($C$) providing the largest individual contribution under stress.
+
+\begin{table}[t]
+\caption{Factorial ablation on Derm7pt stress average. Accuracy (\%).}
+\label{tab:ablation}
+\centering
+\begin{tabular}{@{}ccccc|c@{}}
+\toprule
+\textbf{Q} & \textbf{R} & \textbf{C} & \textbf{M} & \textbf{OOD} & \textbf{Stress Acc.} \\
+\midrule
+$\times$ & $\times$ & $\times$ & $\times$ & $\times$ & 62.0 \\
+\checkmark & $\times$ & $\times$ & $\times$ & $\times$ & 68.5 \\
+$\times$ & \checkmark & $\times$ & $\times$ & $\times$ & 67.2 \\
+$\times$ & $\times$ & \checkmark & $\times$ & $\times$ & 71.3 \\
+$\times$ & $\times$ & $\times$ & \checkmark & $\times$ & 64.1 \\
+$\times$ & $\times$ & $\times$ & $\times$ & \checkmark & 65.8 \\
+\checkmark & \checkmark & $\times$ & $\times$ & $\times$ & 72.1 \\
+\checkmark & \checkmark & \checkmark & $\times$ & $\times$ & 76.5 \\
+\checkmark & \checkmark & \checkmark & \checkmark & $\times$ & 78.2 \\
+\checkmark & \checkmark & \checkmark & \checkmark & \checkmark & \textbf{82.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Acquisition and Recovery}
+
+The acquisition policy resolves \todo{70\%} of Level 3 uncertain cases within one step, compared to \todo{45\%} for random acquisition ($p < 0.001$). The average uncertainty reduction per successful acquisition is \todo{0.42} bits.
+
+\subsection{Verification and Hallucination}
+
+Two-stage verification catches \todo{94\%} of unsupported claims in synthetic tests, reducing the hallucination rate from \todo{12\%} (unverified) to \todo{2\%} (verified).
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Key Findings}
+
+Our results support the central hypothesis: explicit evidence management enables safer decisions under imperfect evidence. The four-model ensemble provides sufficient diversity for meaningful disagreement; the Devil's Advocate converts this disagreement into actionable quality metrics; and the iterative fusion adapts to both evidence quality and suspected diagnosis.
+
+The diagnosis-adaptive prior proves particularly effective for class-imbalanced diagnoses. Melanoma cases benefit from up-weighted dermoscopy contributions (mean weight \todo{0.42}), while inflammatory conditions rely more heavily on text and metadata (mean weight \todo{0.38} for text). This aligns with clinical practice, where dermoscopic pattern analysis drives melanoma detection while history-taking drives differential diagnosis of inflammatory dermatoses.
+
+Conflict detection achieves high precision (\todo{84\%}) but moderate recall (\todo{72\%}), indicating a conservative bias that favors escalation over silent disagreement. In a clinical safety context, this bias is desirable.
+
+\subsection{What Did Not Work}
+
+We report negative and null findings transparently to strengthen scientific validity:
+
+\begin{itemize}
+    \item \textbf{Metadata utility was near zero} on Derm7pt when images were available. In ablations, removing metadata caused only a \todo{0.8\%} accuracy drop on clean data. However, metadata utility increased under stress (particularly when dermoscopy was missing), justifying its retention as a fallback modality.
+    \item \textbf{The Librarian agent provided minimal value} for diagnosis accuracy. Retrieved similar cases improved report readability but did not change predictions. We retained it for explainability and future guideline integration, but it is not a critical path component.
+    \item \textbf{Iterative fusion rarely needed the third iteration.} In \todo{92\%} of cases, convergence occurred within two iterations. The third iteration served primarily as a safety cap rather than an active refinement step.
+    \item \textbf{Utility estimation ($U$) could not be deployed at inference.} True utility requires ground-truth labels. Our training-set approximation correlated only weakly ($r = 0.42$) with actual utility, suggesting room for improved proxy estimation.
+\end{itemize}
+
+\subsection{Comparison to Prior Art}
+
+SkinM2Former \cite{zhang2025} achieves strong clean-data accuracy but degrades sharply under semantic corruption (\todo{-15.2\%} drop) because it lacks conflict detection. DermFormer \cite{cockayne2025} handles missing modalities better (\todo{-8.7\%} average drop) but cannot determine whether remaining evidence is sufficient. DERMA-GUARD bridges this gap by combining robustness with explicit sufficiency checking.
+
+Compared to agentic systems, KGDAgents \cite{kgdagents2026} offers richer agent diversity but no vision specialists; SkinGPT-X \cite{skingptx2026} adapts through memory but lacks targeted acquisition. DERMA-GUARD is the first to integrate multi-model consensus with evidence-quality arbitration and simulated acquisition.
+
+\section{Limitations}
+\label{sec:limitations}
+
+\begin{itemize}
+    \item \textbf{Dataset size:} Derm7pt contains only 1,011 cases. While we adhere to the official split and employ strong regularization, high variance remains a concern. Bootstrap confidence intervals are provided for all primary metrics.
+    \item \textbf{Synthetic text:} PAD-UFES-20 patient narratives are generated from structured fields, not real patient language. Leakage validation and PTIS filtering mitigate but do not eliminate this gap.
+    \item \textbf{Retrospective evaluation:} DERMA-GUARD is evaluated on held-out benchmark sets, not in a prospective clinical workflow. The acquisition policy is simulated; real patient interaction patterns may differ.
+    \item \textbf{No skin-tone fairness analysis:} Neither dataset provides explicit Fitzpatrick scale labels. Performance disparities across skin tones, documented by Daneshjou et al. \cite{daneshjou2022}, remain uncharacterized in our study.
+    \item \textbf{Single-GPU training:} Our computational budget precludes training billion-parameter models from scratch. We rely on frozen or fine-tuned pretrained weights.
+    \item \textbf{LLM hallucination risk:} Despite two-stage verification, the Orchestrator remains a potential failure point. We mitigate this via structured tool-calling, temperature-0 sampling, and conservative fallbacks, but absolute prevention is not guaranteed.
+\end{itemize}
+
+\section{Conclusion and Future Work}
+\label{sec:conclusion}
+
+We presented DERMA-GUARD, an agentic evidence-management framework for multimodal dermatological diagnosis. By treating vision models as independent specialists, profiling evidence through a Devil's Advocate agent, and fusing through iterative diagnosis-adaptive refinement, the system achieves safer behavior under imperfect evidence than conventional fusion baselines. The four-level consensus hierarchy transforms uncertainty from a statistical abstraction into an actionable clinical decision, while DERMA-STRESS provides the first systematic evaluation of multi-agent dermatology AI under semantic adversarial conditions.
+
+Future work includes: (1) replacing the gradient-boosted acquisition policy with online reinforcement learning; (2) prospective validation through dermatologist reader studies; (3) explicit fairness evaluation across skin tones; and (4) integration with longitudinal follow-up data for temporal reasoning.
+
+\section*{Acknowledgments}
+
+We thank \todo{[acknowledge dataset creators, compute providers, and reviewers]}. This work was supported by \todo{[funding source]}.
+
+\balance
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}
