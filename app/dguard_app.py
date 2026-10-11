@@ -31,7 +31,8 @@ from src.constants import MILK_CLASS_FULL_NAMES  # noqa: E402
 st.set_page_config(page_title="D-GUARD", page_icon="🩺", layout="wide")
 
 ACTION_STYLE = {
-    "PROCEED": ("✅", "#1b7f3b", "Answered by the system"),
+    "PROCEED": ("✅", "#1b7f3b", "Answered - HIGH confidence"),
+    "PROCEED_LOW": ("⚠️", "#b54708", "Answered - LOW confidence, a doctor will confirm"),
     "ACQUIRE": ("📷", "#9a6700", "More evidence needed"),
     "DEFER": ("🧑‍⚕️", "#b42318", "Sent to a doctor"),
 }
@@ -40,8 +41,8 @@ ACTION_STYLE = {
 # ------------------------------------------------------------------ backend
 @st.cache_resource(show_spinner="Loading the trained model (first time only)...")
 def backend():
-    from src.native import NativeEngine
-    engine = NativeEngine()
+    from src.agents.pipeline import DGuardPipeline
+    engine = DGuardPipeline.build()
     svc = CareService(engine, CareStore(ROOT / "data" / "care" / "dguard_care.sqlite"),
                       upload_dir=ROOT / "data" / "care" / "uploads")
     samples = engine.sample_lesions("test", n=24, seed=7)
@@ -62,8 +63,9 @@ SITES = sorted(x for x in train["site"].dropna().unique() if x)
 GENERAL_SITES = sorted(x for x in train["anatom_site_general"].dropna().unique() if x)
 
 
-def badge(action, urgency=None):
-    icon, colour, text = ACTION_STYLE.get(action, ("•", "#555", action))
+def badge(action, urgency=None, tier=None):
+    key = "PROCEED_LOW" if action == "PROCEED" and tier == "LOW" else action
+    icon, colour, text = ACTION_STYLE.get(key, ("•", "#555", action))
     urg = (f" &nbsp;<span style='background:#b42318;color:white;padding:2px 8px;"
            f"border-radius:10px;font-size:0.8em'>URGENT</span>" if urgency == "URGENT" else "")
     st.markdown(f"<div style='border-left:6px solid {colour};padding:8px 14px;"
@@ -273,7 +275,7 @@ if role == "Patient":
         st.subheader("2 · Result")
         a = store.latest_assessment(cid)
         if a:
-            badge(a["action"], a["urgency"])
+            badge(a["action"], a["urgency"], a["result"]["decision"].get("tier"))
             st.write("")
             st.markdown(a["result"]["patient_message"].replace("\n", "  \n"))
             rv = store.reviews(cid)
@@ -319,9 +321,29 @@ elif role == "Doctor":
     with tab1:
         show_images(cid)
         if a:
-            badge(a["action"], a["urgency"])
+            badge(a["action"], a["urgency"], a["result"]["decision"].get("tier"))
             st.code(a["result"]["doctor_message"], language=None)
+            rep = a["result"].get("report") or {}
+            if rep.get("text"):
+                st.markdown(f"**Report** _(source: {rep.get('source')})_")
+                st.info(rep["text"])
+            for kind, q in (a["result"].get("quality") or {}).items():
+                if q and q.get("issues"):
+                    st.warning(f"Image quality - {kind}: " + ", ".join(q["issues"]))
             evidence_panel(a["result"])
+            sim = (a["result"].get("similar") or {}).get("similar_cases") or []
+            if sim:
+                agree = a["result"]["similar"].get("agreement")
+                st.markdown("**Similar confirmed past cases** (training lesions, "
+                            "histopathology-backed; shown for context, never used to decide)"
+                            + (f" - {agree:.0%} share the tentative diagnosis"
+                               if agree is not None else ""))
+                cols = st.columns(len(sim))
+                for col, c in zip(cols, sim):
+                    with col:
+                        if c.get("clinical_path") and Path(c["clinical_path"]).exists():
+                            st.image(c["clinical_path"], width="stretch")
+                        st.caption(f"**{c['diagnosis']}** · sim {c['similarity']:.2f}")
             if len(store.assessments(cid)) > 1:
                 st.markdown("**Assessment history**")
                 st.dataframe(pd.DataFrame([{k: x[k] for k in ("created_at", "stage", "action",

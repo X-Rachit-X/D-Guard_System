@@ -28,6 +28,8 @@ REASON_TEXT = {
     DeferReason.NO_EVIDENCE: "no usable evidence was provided",
     DeferReason.ACQUISITION_EXHAUSTED: ("it is still uncertain after the extra evidence "
                                         "was added"),
+    DeferReason.QUALITY: ("the photo quality is outside the range the system was "
+                          "checked on"),
 }
 
 ACQUIRE_TEXT = {
@@ -62,6 +64,20 @@ def explain_patient(d: Decision, class_names: Sequence[str],
                     full_names: Optional[Dict[str, str]] = None) -> str:
     """What the person with the skin lesion reads."""
     lines: List[str] = []
+    if d.action == Action.PROCEED and d.tier == "LOW":
+        lines.append(f"Low-confidence assessment: "
+                     f"{_name(d.prediction, class_names, full_names)} "
+                     f"({_pct(d.tentative_confidence)} likely).")
+        why = REASON_TEXT.get(d.low_reason, "the evidence is not strong enough")
+        lines.append(f"This is NOT reliable enough to act on by itself, because {why}.")
+        if d.urgency == "URGENT":
+            lines.append("IMPORTANT: cancer has not been ruled out. Please see a doctor "
+                         "SOON to confirm.")
+        else:
+            lines.append("Please have a doctor confirm it.")
+        lines.append("A doctor has been asked to review your case.")
+        return "\n".join(lines)
+
     if d.action == Action.PROCEED:
         lines.append(f"Result: the system's assessment is "
                      f"{_name(d.prediction, class_names, full_names)}.")
@@ -109,13 +125,19 @@ def explain_doctor(d: Decision, class_names: Sequence[str],
                    full_names: Optional[Dict[str, str]] = None) -> str:
     """What the reviewing clinician reads."""
     head = {
-        Action.PROCEED: "PROCEED - system-issued assessment",
+        Action.PROCEED: ("PROCEED (LOW CONFIDENCE) - answer given, confirmation required"
+                         if d.tier == "LOW" else
+                         "PROCEED (HIGH CONFIDENCE) - system-issued assessment"),
         Action.ACQUIRE: "ACQUIRE - additional evidence requested",
         Action.DEFER: "DEFER - human decision required",
     }[d.action]
     lines = [head, "-" * len(head)]
     if d.action == Action.PROCEED:
-        lines.append(f"Assessment      : {_name(d.prediction, class_names, full_names)}")
+        lines.append(f"Assessment      : {_name(d.prediction, class_names, full_names)}"
+                     f"  [{d.tier or 'HIGH'} confidence]")
+        if d.tier == "LOW" and d.low_reason is not None:
+            lines.append(f"Low because     : {d.low_reason.value} - "
+                         f"{REASON_TEXT.get(d.low_reason, '')}")
     else:
         lines.append(f"Tentative (UNCONFIRMED): "
                      f"{_name(d.tentative, class_names, full_names)} "

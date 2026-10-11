@@ -1,6 +1,6 @@
 # Limitations
 
-Read [evaluation_integrity.md](evaluation_integrity.md) first — the single largest
+Read [evaluation_integrity.md](reference/evaluation_integrity.md) first — the single largest
 limitation is that no model metric produced before 2026-10-11 is valid.
 
 ---
@@ -83,14 +83,11 @@ of DS conflict mass. That it fires on genuine contradictions rather than merely 
 cases is an assumption still to be tested (H5).
 
 **Native results rest on one seed and one encoder.** The MILK10k numbers in
-[14_results.md](14_results.md) come from a single ResNet50 run (seed 42). Seeds 7 and 2026
+[14_results.md](05_results.md) come from a single ResNet50 run (seed 42). Seeds 7 and 2026
 are required before they are final, and validation was used both to pick the epoch and to
 calibrate the policy.
 
-**The system answers alone for only about a third of patients.** At the balanced cost
-(missed cancer = 5) it defers 63%. Every deferred patient gets a tentative opinion and a
-place in the doctor queue, but the deferral rate is set by the classifier's quality and is
-the main practical limitation.
+**Only about a third of answers are HIGH confidence.** In minimal-defer mode 90% of patients get an answer, but 55% of patients get a LOW-confidence answer (51.7% exactly right, 82% with the truth in the top 3) and need a doctor's confirmation. The HIGH share is set by the classifier's quality.
 
 **At the pre-registered cost the system cannot reassure anyone.** With a missed cancer
 priced at 10, every answer it gives is a cancer diagnosis. See
@@ -98,6 +95,14 @@ priced at 10, every answer it gives is a cancer diagnosis. See
 
 **MONET concept scores are unavailable for new uploads.** They come from an external model
 run on the image; for a user's own photo the engine substitutes the training median.
+
+**The evidential model does not detect every bad photo.** Blur lowers its ignorance. The
+quality gate covers blur, darkness, glare and occlusion via thresholds on simple image
+statistics; failure modes those statistics do not capture (e.g. a sharp photo of the wrong
+spot) are not detected.
+
+**The quality agent's thresholds are percentiles of 300 training photos**, not a clinical
+standard. About 6% of ordinary photos trip the severe level and lose their HIGH label.
 
 ## 3. Scope
 

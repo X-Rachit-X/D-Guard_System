@@ -49,6 +49,7 @@ class DeferReason(str, Enum):
     COST = "COST"                # deferring is simply cheaper
     NO_EVIDENCE = "NO_EVIDENCE"  # nothing supplied at all
     ACQUISITION_EXHAUSTED = "ACQUISITION_EXHAUSTED"
+    QUALITY = "QUALITY"          # photo outside the calibrated quality range
 
 
 # ---------------------------------------------------------------------------
@@ -143,11 +144,24 @@ class Decision:
     differential: List[Tuple[int, float]] = field(default_factory=list)
     p_malignant: Optional[float] = None
     urgency: Optional[str] = None          # "URGENT" | "ROUTINE"
+    #: Confidence tier of a PROCEED answer.
+    #:   "HIGH"  every safety gate passed - the calibrated, guaranteed answer
+    #:   "LOW"   an answer given in minimal-defer mode although a gate fired or
+    #:           deferral was cheaper; ALWAYS shown as low confidence and
+    #:           ALWAYS requires a clinician's confirmation
+    tier: Optional[str] = None
+    #: Why a LOW-tier answer is low confidence (the gate or cost reason that
+    #: would have deferred it in standard mode).
+    low_reason: Optional["DeferReason"] = None
+
+    @property
+    def requires_confirmation(self) -> bool:
+        return self.action != Action.PROCEED or self.tier == "LOW"
 
     @property
     def is_autonomous(self) -> bool:
-        """True only when the system is allowed to state a diagnosis itself."""
-        return self.action == Action.PROCEED
+        """True only for a HIGH-tier answer: the system may state it on its own."""
+        return self.action == Action.PROCEED and self.tier != "LOW"
 
     def to_dict(self) -> Dict:
         return {
@@ -165,6 +179,9 @@ class Decision:
             "p_malignant": self.p_malignant,
             "urgency": self.urgency,
             "autonomous": self.is_autonomous,
+            "tier": self.tier,
+            "low_reason": self.low_reason.value if self.low_reason else None,
+            "requires_confirmation": self.requires_confirmation,
         }
 
 
@@ -213,6 +230,15 @@ class ThreeActionPolicy:
     #:                  sent onward either way - and its false-alarm cost is
     #:                  already priced by the cost matrix.
     ambiguity_gate: str = "symmetric"
+    #: "standard": any blocked case is DEFERRED.
+    #: "minimal":  a blocked case is ANSWERED in the LOW tier - explicitly low
+    #:             confidence, confirmation required - instead of deferred.
+    #:             Only contradiction between sources (conflict) and the absence
+    #:             of any evidence still DEFER: a contradiction has no single best
+    #:             answer to state, and no evidence has none at all.
+    #: The HIGH tier is identical in both modes, so the calibrated guarantees
+    #: apply to exactly the same answers either way.
+    defer_mode: str = "standard"
     max_acquisitions: int = 1
     version: str = "eade-v3.0"
 
@@ -332,6 +358,9 @@ class ThreeActionPolicy:
                       DeferReason.RISK_BOUND if gate_risk else DeferReason.IGNORANCE)
             if n_acquisitions_so_far >= self.max_acquisitions and not acquirable:
                 reason = DeferReason.ACQUISITION_EXHAUSTED
+            if self.defer_mode == "minimal":
+                return Decision(action=Action.PROCEED, prediction=pred, tier="LOW",
+                                low_reason=reason, expected_loss=r_proceed, **common)
             return Decision(action=Action.DEFER, reason=reason, **common)
 
         # --- unblocked: plain expected-loss comparison --------------------
@@ -339,8 +368,12 @@ class ThreeActionPolicy:
             return Decision(action=Action.ACQUIRE, acquire_target=best_m,
                             expected_loss=float(r_acquire), **common)
         if r_defer < r_proceed:
+            if self.defer_mode == "minimal":
+                return Decision(action=Action.PROCEED, prediction=pred, tier="LOW",
+                                low_reason=DeferReason.COST, expected_loss=r_proceed,
+                                **common)
             return Decision(action=Action.DEFER, reason=DeferReason.COST, **common)
-        return Decision(action=Action.PROCEED, prediction=pred,
+        return Decision(action=Action.PROCEED, prediction=pred, tier="HIGH",
                         expected_loss=r_proceed, **common)
 
     # ------------------------------------------------------------------

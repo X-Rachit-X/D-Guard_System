@@ -3,18 +3,15 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "derma-guard"
-version = "4.0.0"
-description = "Agentic Evidence-Management Framework for Reliable Multimodal Dermatological Diagnosis"
+name = "d-guard"
+version = "1.0.0"
+description = "Risk-controlled, cost-aware evidence acquisition and deferral for multimodal dermatology AI"
 requires-python = ">=3.10"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "HealthSphere Research Team"}
 ]
-
-[project.scripts]
-derma-guard = "src.main:main"
 
 [tool.black]
 line-length = 100
@@ -40,5 +37,5 @@ warn_unused_configs = true
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 markers = [
-    "integration: end-to-end tests that load the real trained checkpoints (slow; auto-skipped when the artifacts are absent)",
+    "integration: tests that need the MILK10k data on disk (auto-skipped when absent)",
 ]

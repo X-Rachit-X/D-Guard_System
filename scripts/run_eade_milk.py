@@ -136,6 +136,14 @@ def main() -> int:
                     help="argmax: state the most likely diagnosis (default). bayes: "
                          "state the lowest-cost label, which on this mostly-malignant "
                          "population calls almost everything malignant")
+    ap.add_argument("--no-quality-gate", action="store_true",
+                    help="do not downgrade HIGH answers on photos with a severe "
+                         "quality issue (the app applies this gate)")
+    ap.add_argument("--data", default="milk10k", help="dataset root (for the photos)")
+    ap.add_argument("--defer-mode", choices=["minimal", "standard"], default="minimal",
+                    help="minimal: blocked cases are ANSWERED in a LOW-confidence tier "
+                         "that requires a doctor's confirmation; only conflict defers "
+                         "(default). standard: blocked cases are deferred")
     ap.add_argument("--gate", choices=["reassurance", "symmetric"], default="reassurance",
                     help="reassurance: block only benign statements while malignancy "
                          "is still possible (default). symmetric: block any set "
@@ -158,7 +166,7 @@ def main() -> int:
 
     cost = CostMatrix(missed_malignant=args.missed_cost)
     policy_kw = {"cost": cost, "label_rule": args.label_rule,
-                 "ambiguity_gate": args.gate}
+                 "ambiguity_gate": args.gate, "defer_mode": args.defer_mode}
 
     print("=" * 76)
     print("D-GUARD on MILK10k - native evidential model, two-stage acquisition")
@@ -248,9 +256,37 @@ def main() -> int:
         final_pred.append(d.prediction if d.action == Action.PROCEED else -1)
         stage_of.append("B" if acquired[i] else "A")
 
+    # ---------------- quality gate (identical to src/agents/pipeline.py) ----------
+    n_quality = 0
+    if not args.no_quality_gate:
+        from PIL import Image
+
+        from src.agents.quality import ImageQualityAgent
+        from src.decision.policy import DeferReason
+        cache = ROOT / "outputs" / "milk_rag"
+        img_dir = ROOT / args.data / "images"
+        qa_c = ImageQualityAgent.fit([], cache=cache / "quality_thresholds.json")
+        qa_d = ImageQualityAgent.fit([], cache=cache / "quality_thresholds_dermoscopy.json")
+        for i, d in enumerate(decisions):
+            if d.action != Action.PROCEED or d.tier == "LOW":
+                continue
+            bad = bool(qa_c.check(Image.open(img_dir / str(test["clinical_file"][i]))).severe)
+            if acquired[i]:
+                bad |= bool(qa_d.check(Image.open(img_dir / str(test["dermoscopy_file"][i]))).severe)
+            if bad:
+                d.tier, d.low_reason = "LOW", DeferReason.QUALITY
+                n_quality += 1
+        print(f"\nquality gate: {n_quality} HIGH answers downgraded to LOW "
+              f"(severe photo-quality issue)")
+
     act = np.array(final_action)
     pred = np.array(final_pred)
-    proceed = act == Action.PROCEED.value
+    tier = np.array([d.tier or "" for d in decisions])
+    answered = act == Action.PROCEED.value
+    # "proceed" = the HIGH tier: answers that passed every gate. All baseline
+    # comparisons use it, so they are identical in standard and minimal mode.
+    proceed = answered & (tier != "LOW")
+    low = answered & (tier == "LOW")
     n = len(yt)
 
     # Realised cost per case under the cost matrix: PROCEED pays the error
@@ -264,8 +300,8 @@ def main() -> int:
     print("TEST RESULTS - D-GUARD")
     print("=" * 76)
     print(f"  PROCEED  {proceed.sum():4d}  {proceed.mean():.3f}   "
-          f"(stage A {((act == 'PROCEED') & ~acquired).sum()}, "
-          f"after dermoscopy {((act == 'PROCEED') & acquired).sum()})")
+          f"HIGH tier (stage A {(proceed & ~acquired).sum()}, "
+          f"after dermoscopy {(proceed & acquired).sum()})")
     print(f"  ACQUIRE  {acquired.sum():4d}  {acquired.mean():.3f}   "
           f"dermoscopy requested")
     print(f"  DEFER    {(act == 'DEFER').sum():4d}  {(act == 'DEFER').mean():.3f}")
@@ -275,8 +311,23 @@ def main() -> int:
     print(f"  malignancy miss rate (PROCEED) {miss.mean() if proceed.any() else 0:.4f}   "
           f"[{miss.sum()} of {proceed.sum()}]")
     print(f"  mean cost per case             {case_cost.mean():.4f}")
-    urgent = sum(1 for d in decisions if d.action != Action.PROCEED and d.urgency == "URGENT")
-    print(f"  deferred/acquired flagged URGENT {urgent}")
+    urgent = sum(1 for d in decisions if d.requires_confirmation and d.urgency == "URGENT")
+    print(f"  needing a doctor, flagged URGENT {urgent}")
+
+    low_miss = is_missed_malignant(yt[low], pred[low]) if low.any() else np.array([])
+    print()
+    print(f"CONFIDENCE TIERS  (defer mode: {args.defer_mode})")
+    print(f"  answered, HIGH confidence  {proceed.sum():4d}  {proceed.mean():.3f}   "
+          f"accuracy {(pred[proceed] == yt[proceed]).mean():.3f}   "
+          f"missed cancers {miss.mean() if proceed.any() else 0:.3f}")
+    if low.any():
+        print(f"  answered, LOW confidence   {low.sum():4d}  {low.mean():.3f}   "
+              f"accuracy {(pred[low] == yt[low]).mean():.3f}   "
+              f"missed cancers {low_miss.mean():.3f}   "
+              f"top-3 hit {np.mean([yt[i] in [c for c, _ in decisions[i].differential] for i in np.flatnonzero(low)]):.3f}")
+    print(f"  deferred (conflict only)   {(act == 'DEFER').sum():4d}  {(act == 'DEFER').mean():.3f}")
+    print(f"  => the patient gets an answer in {answered.mean():.1%} of cases; "
+          f"{proceed.mean():.1%} are calibrated HIGH-confidence answers")
 
     # ---------------- baselines ---------------------------------------------
     print()
@@ -385,6 +436,18 @@ def main() -> int:
             "stage_B": {"qhat": ccB.qhat, "conflict_p90": cthrB,
                         "ltt": lttB.to_dict()},
         },
+        "tiers": {
+            "defer_mode": args.defer_mode,
+            "answered_rate": float(answered.mean()),
+            "high_rate": float(proceed.mean()),
+            "low_rate": float(low.mean()),
+            "defer_rate": float((act == "DEFER").mean()),
+            "low_accuracy": float((pred[low] == yt[low]).mean()) if low.any() else None,
+            "low_miss_rate": float(low_miss.mean()) if low.any() else None,
+            "low_top3": float(np.mean([yt[i] in [c for c, _ in decisions[i].differential]
+                                       for i in np.flatnonzero(low)])) if low.any() else None,
+            "answered_accuracy": float((pred[answered] == yt[answered]).mean()) if answered.any() else None,
+        },
         "dguard": {
             "proceed_rate": float(proceed.mean()),
             "acquire_rate": float(acquired.mean()),
@@ -435,6 +498,7 @@ def main() -> int:
         "cost": cost,
         "label_rule": args.label_rule,
         "ambiguity_gate": args.gate,
+        "defer_mode": args.defer_mode,
         "set_mode": args.set_mode,
         "stage_A": {"sets": ccA, "conflict_threshold": cthrA,
                     "lambda_hat": lttA.lambda_hat if not args.no_ltt else None},

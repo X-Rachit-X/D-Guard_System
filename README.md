@@ -2,91 +2,92 @@
 
 **Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral for Multimodal Dermatology AI**
 
-> ⚠️ **Research prototype. Not clinically validated. Do not use for medical diagnosis.**
+> ⚠️ Research prototype. Not clinically validated. Not for medical diagnosis.
 
-A skin-lesion AI that decides, for each patient, whether to **answer**, **ask for a
-dermoscopy photo**, or **hand the case to a doctor** — and a care platform around it where
-patients upload photos, doctors review a prioritised queue, and follow-ups are checked for
-change.
+A skin-lesion AI trained on **MILK10k** (11 diagnoses, every lesion with a clinical photo
+**and** a dermoscopy image). For each patient it gives one of four outcomes — and around it
+sits a care platform where patients, doctors and follow-ups meet.
 
-| Action | When | What the patient gets |
+| | Outcome | Share of test patients |
 |---|---|---|
-| ✅ **PROCEED** | confident, all safety gates pass | an assessment, instructions, a follow-up date |
-| 📷 **ACQUIRE** | a dermoscopy photo is expected to change the answer | a request for that photo, then a new assessment |
-| 🧑‍⚕️ **DEFER** | conflict, too little evidence, or cancer cannot be ruled out | a **tentative** opinion, a strong "see a doctor" instruction, and a place in the doctor's queue |
+| ✅ | **Answer — HIGH confidence** · every safety check passed | 35% |
+| 📷 | **Ask for dermoscopy** · then answer | 6% |
+| ⚠️ | **Answer — LOW confidence** · best diagnosis, clearly marked, a doctor confirms | 55% |
+| 🧑‍⚕️ | **Defer** · photo and details contradict each other | 10% |
+
+**9 in 10 patients get an answer.**
 
 ---
 
-## Result (MILK10k, trained model, 787 held-out lesions)
+## Results (787 held-out MILK10k lesions)
 
-| Policy | answered alone | dermoscopy taken | accuracy | **missed cancers** |
-|---|---|---|---|---|
-| Always answer from the photo | 100% | 0% | 64.4% | 5.2% |
-| Confidence-based abstention, same coverage | 36.8% | 0% | 84.1% | 5.2% |
-| **D-GUARD** | **36.8%** | **6.4%** | **83.8%** | **1.7%** |
+| | HIGH-confidence answers | Standard approach, same coverage |
+|---|---|---|
+| Accuracy (11 classes) | **83.8%** | 84.2% |
+| Balanced accuracy | **0.355** | 0.300 |
+| **Missed cancers** | **1.8%** | 4.7% |
+| Dermoscopy needed | 6.4% of patients | — |
 
-**Same coverage, same accuracy, a third of the missed cancers** — at lower mean cost than
-the abstention baseline, asking for dermoscopy for only 6% of patients.
+- **A third of the missed cancers** at the same coverage and accuracy.
+- LOW-confidence answers: true diagnosis in the top 3 for **82%** of patients.
+- Dermoscopy raises cancer-vs-benign AUROC **0.80 → 0.86** and cuts the model's ignorance
+  **0.68 → 0.44**; a learned estimator decides *when* it is worth asking (acquisition
+  efficiency **+0.27** vs **+0.01** for "ask the most uncertain").
+- The missed-cancer bound is **statistically certified** (Learn-then-Test).
 
-Also measured: dermoscopy raises malignant-vs-benign AUROC from **0.80 to 0.86** and cuts
-the model's ignorance from **0.68 to 0.44**; the acquisition estimator captures far more of
-dermoscopy's benefit than asking the most uncertain cases (AE **+0.27** vs **+0.01**); the
-Learn-then-Test risk threshold is **certified** at both stages.
-
-**Reported against us:** it answers alone for only ~37% of patients; on *mean* cost,
-always answering is cheaper (deferral is priced at 1.5); using all three sources scores
-below the best pair (0.379 vs 0.403 macro-F1); one training seed so far. Full results and
-every caveat: **[docs/14_results.md](docs/14_results.md)**.
+Reported against us, and in the docs: combining all three inputs scores below the best pair
+(0.379 vs 0.403 macro-F1); on average cost, always answering is cheaper; one training seed.
+Everything: **[docs/05_results.md](docs/05_results.md)**.
 
 ---
 
 ## How it works
 
 ```
- photo ──────┐   ┌────────────────┐   ┌──────────────┐   ┌─────────────┐   ┌───────────┐
- dermoscopy ─┼──►│ one evidential │──►│ Dempster–    │──►│ safety      │──►│ PROCEED   │
- details ────┘   │ head per source│   │ Shafer fusion│   │ gates       │   │ ACQUIRE   │
-                 │ belief +       │   │ belief,      │   │ conformal   │   │ DEFER     │
-                 │ ignorance u    │   │ ignorance,   │   │ LTT, conflict│  │ +tentative│
-                 └────────────────┘   │ CONFLICT     │   │ cost matrix │   │  opinion  │
-                                      └──────────────┘   └─────────────┘   └─────┬─────┘
-      agents: specialists · evidence auditor · librarian (similar cases) · report + verifier
-      platform: patient app · doctor queue · instructions · questions · follow-ups · audit
+ photo ──────┐   ┌──────────────────┐   ┌──────────────┐   ┌─────────────┐   HIGH answer
+ dermoscopy ─┼──►│ evidential head  │──►│ Dempster–    │──►│ safety gates│──► ask dermoscopy
+ details ────┘   │ per input:       │   │ Shafer fusion│   │ + cost      │   LOW answer
+                 │ belief +         │   │ belief,      │   │             │   defer
+                 │ ignorance u      │   │ ignorance,   │   │ conformal,  │   + tentative
+                 └──────────────────┘   │ CONFLICT     │   │ Learn-then- │     opinion
+                                        └──────────────┘   │ Test        │
+                                                           └─────────────┘
+   agents:   quality check · similar confirmed cases (RAG) · report + claim verifier
+   platform: patient app · doctor queue · questions · follow-ups + change check · audit · REST API
 ```
 
-1. **Each source says how much it knows.** An evidential head outputs *belief* and
-   *ignorance* `u` (1 = no evidence). Softmax cannot say "I don't know"; this can.
-2. **Dynamic fusion.** Dempster–Shafer combination: a missing source is total ignorance
-   and changes nothing; a weak source has little evidence and little weight — per case,
-   automatically. The app shows each case's weights.
-3. **Conflict ≠ ignorance.** Sources confidently disagreeing (→ a human decides) is a
-   different number from nobody knowing (→ get more evidence).
-4. **Calibrated gates.** A conformal set over benign/malignant blocks false reassurance; a
-   Learn-then-Test threshold carries a statistical bound on missed cancers.
-5. **Cheapest action.** Compare the expected cost of answering, acquiring and deferring.
+1. **Each input says how much it knows** — belief in each diagnosis plus ignorance `u`.
+2. **Dynamic fusion** — Dempster–Shafer: a missing input changes nothing; a weak one gets
+   little weight, per patient, automatically; disagreement becomes a separate number.
+3. **Calibrated gates** — no false reassurance while cancer is possible; a certified
+   threshold on missed cancers; contradictions go to a human.
+4. **Cheapest action** — answer, ask for dermoscopy, or review, priced with an explicit cost
+   matrix.
 
-Plain-English explanation of every concept: **[docs/11_learning_path.md](docs/11_learning_path.md)**.
+From zero: **[docs/02_learning_path.md](docs/02_learning_path.md)**.
 
 ---
 
-## Quickstart
+## Run it
 
 ```bash
-pip install -e ".[dev]"
-# Windows/Anaconda: set KMP_DUPLICATE_LIB_OK=TRUE first
+pip install -r requirements.txt
+# Windows/Anaconda: set KMP_DUPLICATE_LIB_OK=TRUE
 
-pytest tests -q                          # 470 passed, 3 skipped
-
-# the trained model, end to end (needs ./milk10k and runs/*/checkpoints/best.pt)
-python scripts/milk_native_infer.py      # verify it matches the Kaggle run
-python scripts/run_eade_milk.py --missed-cost 5 --out outputs/eade_milk/cost_5
-python scripts/demo_care.py              # three patients: PROCEED, ACQUIRE, DEFER
-
-streamlit run app/dguard_app.py          # the app: patient, doctor, system views
+python scripts/demo_care.py            # four patients end to end (terminal)
+streamlit run app/dguard_app.py        # web app: patient / doctor / system
+uvicorn src.api:app --port 8000        # REST API, docs at /docs
+pytest tests -q                        # 217 tests, ~6 s
 ```
 
-Training on a GPU: **[docs/06_training_guide.md](docs/06_training_guide.md)** with
-[`notebooks/kaggle_train_dguard.py`](notebooks/kaggle_train_dguard.py).
+Needs `./milk10k` (the dataset) and `runs/milk10k_resnet50_seed42/checkpoints/best.pt`
+(the trained weights). To rebuild everything derived from them:
+
+```bash
+python scripts/milk_native_infer.py                    # ~2.5 min
+python scripts/run_eade_milk.py --missed-cost 5 --out outputs/eade_milk/cost_5
+python scripts/build_milk_index.py                     # ~3 min
+```
 
 ---
 
@@ -94,55 +95,32 @@ Training on a GPU: **[docs/06_training_guide.md](docs/06_training_guide.md)** wi
 
 | | |
 |---|---|
-| MILK10k evidential model, trained (Kaggle, seed 42) and verified locally | ✅ |
-| Two-stage decision engine + 6 baselines + cost sweep | ✅ |
-| Tentative opinion on every DEFER/ACQUIRE | ✅ |
-| Care platform: patients, doctor queue, questions, follow-ups, change check, audit | ✅ |
-| Web app + terminal demo | ✅ |
-| RAG similar-case retrieval (explanation only, leak-guarded) and 7-agent pipeline | ✅ |
-| DERMA-STRESS robustness benchmark | ✅ |
-| Seeds 7 and 2026, DermLIP encoder | ⬜ [docs/09](docs/09_what_you_need_to_do.md) |
-| Metrics from the original checkpoints | ❌ invalid — [docs/evaluation_integrity.md](docs/evaluation_integrity.md) |
+| Dataset | **MILK10k only** (PAD-UFES-20 belonged to the earlier prototype — [docs/01_overview.md](docs/01_overview.md) §2) |
+| Model | trained on Kaggle, runs locally, matches the Kaggle result |
+| Decision engine, tiers, agents, platform, app, API | ✅ working |
+| Required training or downloads | **none** |
+| Optional | seeds 7 & 2026, DermLIP encoder — [docs/09_todo.md](docs/09_todo.md) |
 
 ---
 
 ## Documentation
 
-Start at **[docs/00_index.md](docs/00_index.md)**.
-
-| For | Read |
+| | |
 |---|---|
-| Learning the project | [15_study_plan.md](docs/15_study_plan.md) → [11_learning_path.md](docs/11_learning_path.md) |
-| One case end to end | [12_system_walkthrough.md](docs/12_system_walkthrough.md) |
-| The numbers | [14_results.md](docs/14_results.md) |
-| Presenting it | [13_panel_guide.md](docs/13_panel_guide.md) |
-| What is left | [09_what_you_need_to_do.md](docs/09_what_you_need_to_do.md) |
-| Folder layout | [16_project_structure.md](docs/16_project_structure.md) |
-| What failed | [what_did_not_work.md](docs/what_did_not_work.md) |
-| The paper | [paper/main.tex](paper/main.tex) |
+| Start | [docs/00_index.md](docs/00_index.md) · [01_overview.md](docs/01_overview.md) |
+| Learn | [02_learning_path.md](docs/02_learning_path.md) · [08_study_plan.md](docs/08_study_plan.md) |
+| System | [03_system.md](docs/03_system.md) · [04_methods.md](docs/04_methods.md) · [10_project_structure.md](docs/10_project_structure.md) |
+| Results | [05_results.md](docs/05_results.md) · [what_did_not_work.md](docs/what_did_not_work.md) · [limitations.md](docs/limitations.md) |
+| Present | [07_panel_guide.md](docs/07_panel_guide.md) · [paper/main.tex](paper/main.tex) |
 
 ---
 
-## Datasets
+## Positioning
 
-| | Role | |
-|---|---|---|
-| **MILK10k** (ISIC, `10.34970/648456`) | primary | 5,240 lesions, each with a clinical photo **and** a dermoscopy image; 11 classes; 71.7% malignant; 95.7% histopathology; CC-BY-NC |
-| **PAD-UFES-20** (`10.1016/j.dib.2020.106221`) | shift set, legacy pipeline | 2,298 smartphone images, no dermoscopy; CC BY 4.0 |
+The individual techniques — evidential learning, Dempster–Shafer fusion, conformal
+prediction, Learn-then-Test, learning to defer — are established. The contribution is their
+combination into one calibrated decision with confidence tiers, the **measured** value of
+asking for dermoscopy on paired data, and a working care platform around it.
 
-No patient data is committed to this repository.
-
----
-
-## Honest positioning
-
-**Not novel on their own:** evidential deep learning, Dempster–Shafer combination,
-conformal prediction, Learn-then-Test, learning to defer, recommending dermoscopy.
-
-**Our contribution:** their combination into one calibrated three-action policy; measuring
-the value of acquiring dermoscopy on real paired data; the stress benchmark; and a working
-care platform around it.
-
-**We do not claim:** "first", "state of the art", "clinically safer", or "guaranteed safe".
-The guarantee is statistical, assumes test patients resemble calibration patients, and does
-not hold under distribution shift.
+MILK10k is CC-BY-NC (credit: the MILK study team, ISIC). No images or patient data are in
+this repository.

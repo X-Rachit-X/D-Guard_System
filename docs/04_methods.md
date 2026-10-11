@@ -3,7 +3,7 @@
 Formal specification of every quantity the system computes. Each replaces a hand-set
 constant from an earlier version with either a derivation or a calibration procedure.
 
-Citations verified 2026-10-11 — see [07_literature.md](07_literature.md).
+Citations verified 2026-10-11 — see [07_literature.md](reference/literature.md).
 
 ---
 
@@ -102,28 +102,27 @@ distribution rather than an arbitrary confident one.
 
 ---
 
-## 3. Conformal prediction sets
+## 3. Conformal prediction sets — over benign / malignant
 
-APS / RAPS sets with marginal coverage `≥ 1−α_conf`, calibrated split-conformally.
+The safety question is "can cancer be ruled out?", so the gate uses a **two-outcome**
+set over `{benign, malignant}` with `p_mal = Σ_{k∈M} p_k`, not an 11-class set.
 
 ```
-qhat = Quantile_{⌈(n+1)(1−α)⌉/n} ( scores of true labels on calibration )
-set(x) = { k : score_k(x) ≤ qhat }
+score      s = 1 − p(true outcome)                     (LAC; Sadinle et al., JASA 2019)
+quantile   q_c = Quantile_{⌈(n_c+1)(1−α)⌉/n_c}( s_i : y_i = c )   per outcome (Mondrian)
+set(x)     { c : 1 − p_c(x) ≤ q_c }
 ```
 
-**The rule the policy uses:**
+Mondrian calibration means **at least (1−α) of malignant lesions keep "malignant" in their
+set** — the property that makes false reassurance rare. α = 0.10.
 
-> If the set contains at least one benign **and** at least one malignant class, PROCEED
-> is not permitted. An **empty** set also blocks PROCEED — no label was conformal at this
-> `α`, which is a reason to stop rather than to guess.
+**Why not 11-class APS?** Two measured failures (both in
+[what_did_not_work.md](what_did_not_work.md) §19): an 11-class set from a 0.38-macro-F1
+model spans both groups almost everywhere (70% deferral), and non-randomised APS on two
+classes collapses its quantile to 1.0 (100% deferral).
 
-**Class-conditional (Mondrian)** calibration fits `qhat_k` per class, so coverage holds
-within each class instead of only on average. A stratum needs roughly `n_k ≳ 1/α`
-points; `ConformalCalibrator.fit` records shortfalls in `underpowered_classes` instead of
-emitting a meaningless bound.
-
-Implementation: `src/calibration/conformal.py`. Verified: empirical coverage 0.8944
-against a 0.90 target on 464 test cases.
+Implementation: `src/calibration/binary.py` (the 11-class APS/RAPS calibrator remains in
+`src/calibration/conformal.py`).
 
 ---
 
@@ -142,31 +141,31 @@ thresholds (0.80 / 0.50 / 0.30) implicitly assumed **all errors cost the same**,
 false and was never stated. A sensitivity sweep over `ℓ_miss ∈ {5, 10, 20}` is
 **mandatory** because conclusions depend on it.
 
+### Which label is stated
+
+The stated label is the **most probable class**, `ŷ = argmax_k p_k`
+(`label_rule="argmax"`). The cost matrix decides only **whether** it may be stated.
+
+Stating the *lowest-cost* label instead (classic Chow) shifts every answer toward
+malignancy: with `ℓ_miss : ℓ_fa = 10 : 2` it calls a lesion malignant whenever
+`P(mal) > 1/6`, which on MILK10k (73.6% malignant) is 98.5% of lesions — a zero miss rate
+for a useless reason. Kept as `label_rule="bayes"` for comparison.
+
 ### Expected losses
 
 ```
-R_proceed(S)   = min_ŷ  Σ_y p_S(y) L(y, ŷ)
-R_acquire(S,m) = Ê[ R_proceed(S ∪ {m}) ] + c_acq(m)
-               = R_proceed(S) − h_m(x_S) + c_acq(m)
+R_proceed      = Σ_y p(y) L(y, ŷ)
+R_acquire(m)   = R_proceed − ĥ_m(x) + c_acq(m)
 R_defer        = c_def
-
-a*(S) = argmin{ R_proceed, min_m R_acquire, R_defer }
 ```
 
-subject to `≤ T_max` acquisition rounds, only genuinely available modalities, and the
-gates in §5. This is the multiclass generalisation of **Chow's rule (1970)**; the
-symmetric 0–1 case collapses to a single confidence threshold, i.e. the old ladder is the
-special case that assumes symmetric costs.
+### Acquisition-value estimator `ĥ`
 
-### Acquisition-value estimator `h_m`
-
-1. **Out-of-fold** (5-fold) predictions for `p_{S}` and `p_{S∪{m}}` on training lesions
-   where both modalities exist — in-fold targets would be optimistic.
-2. Target `t_i = R_proceed(S)_i − R_proceed(S∪{m})_i`, the realised loss reduction.
-3. Fit gradient-boosted trees on features available **before** acquisition: posterior,
-   entropy, `u_m`, `C`, quality scores, OOD score, metadata.
-
-Fallbacks: entropy threshold (HOT-style, B5) and ensemble mutual information (B6).
+Gradient-boosted regressor (200 trees, depth 3) fitted on **validation** lesions. Target:
+the realised cost reduction from adding the real dermoscopy image,
+`L(y, ŷ_photo) − L(y, ŷ_photo+dermo)`. Features available before acquisition: `u`, `C`,
+`max_k p_k`, `p_mal`, normalised entropy, `u_clinical`, `u_metadata`. Scored by
+acquisition efficiency against random and highest-entropy acquisition.
 
 ---
 
@@ -220,21 +219,35 @@ Implementation: `src/calibration/ltt.py` · tests: `tests/test_calibration.py`.
 
 ---
 
-## 6. Safety gates
+## 6. Safety gates and confidence tiers
 
-Three gates on PROCEED, each able only to **increase** caution:
+| Gate | Condition | Reason |
+|---|---|---|
+| Conflict | `C > C_cal` (validation p90) | `CONFLICT` |
+| False reassurance | stated label benign **and** "malignant" in the conformal set, or empty set | `AMBIGUOUS_SET` |
+| Risk | `1 − u < λ̂` (Learn-then-Test) | `RISK_BOUND` |
+| Cost | `R_defer < R_proceed` | `COST` |
 
-| Gate | Condition | Deferral reason | Clinical response |
-|---|---|---|---|
-| Conflict | `C > C_calibrated` (validation p90) | `CONFLICT` | human review — more evidence cannot resolve a contradiction |
-| Ambiguity | conformal set spans benign ∧ malignant, or is empty | `AMBIGUOUS_SET` | acquire, else defer |
-| Risk | `confidence < λ̂` | `RISK_BOUND` | acquire, else defer |
+The ambiguity gate blocks **only false reassurance** (`ambiguity_gate="reassurance"`).
+Stating "likely cancer, see a dermatologist" while benign is still possible errs in the
+safe direction and is priced by `ℓ_fa`.
 
-Conflict **short-circuits** ACQUIRE: collecting more evidence does not resolve a
-contradiction between existing sources.
+**Confidence tiers (`defer_mode="minimal"`, what the system uses):**
 
-This is the substantive improvement over the 4-level ladder, which produced four levels
-with overlapping meanings and could not say *why* it was unsure.
+| Outcome | When | What happens |
+|---|---|---|
+| **PROCEED — HIGH** | no gate fires and proceeding is cheapest | the calibrated answer; the guarantees apply here |
+| **ACQUIRE** | a gate or cost blocks, and `R_acquire` is lowest | ask for dermoscopy, decide again (max one round) |
+| **PROCEED — LOW** | a gate or cost blocks, acquisition not worth it or done | answer **given**, labelled low confidence, **doctor confirmation required** |
+| **DEFER** | `C > C_cal`, or no evidence at all | a contradiction has no single answer to state |
+
+The HIGH tier is identical to standard mode, so every guarantee and every baseline
+comparison is about the same set of answers. `defer_mode="standard"` turns the LOW tier
+back into deferrals.
+
+Every outcome — including DEFER — carries the **tentative opinion**: most likely
+diagnosis, top-3 differential, `p_mal`, and an urgency flag (`URGENT` if `p_mal ≥ 0.30` or
+a malignant class is in the set).
 
 ---
 
@@ -293,26 +306,25 @@ Implementation: `src/eval/selective.py` · tests: `tests/test_selective.py`.
 ## 8. Algorithm
 
 ```
-Input: case x, available modalities A(x)
-Output: PROCEED(ŷ) | ACQUIRE(m) | DEFER(reason)
+Input:  case x with available modalities A(x)
+Output: PROCEED(ŷ, tier) | ACQUIRE(dermoscopy) | DEFER(CONFLICT)   + tentative opinion
 
- 1  for m in modalities:
- 2      op_m = EvidentialHead_m(encode_m(x_m))   if m in A(x)
- 3             vacuous(K)                        otherwise
- 4  (b, u, C) = fold_DS(op_1 .. op_M)            # order-independent
- 5  p = b + u/K                                   # pignistic
- 6
- 7  set = conformal(p)                            # calibrated, class-conditional
- 8  if C > C_cal:                 return DEFER(CONFLICT)
- 9  if ambiguous(set):            gate_proceed = False
-10  if (1−u) < λ̂:                gate_proceed = False
-11
-12  R_proceed = min_ŷ Σ_y p(y) L(y,ŷ)
-13  R_acquire = min_m [ R_proceed − h_m(x) + c_acq(m) ]
-14  if not gate_proceed:
-15      return ACQUIRE(argmin) if R_acquire < c_def else DEFER(reason)
-16  return argmin{ PROCEED(ŷ*), ACQUIRE, DEFER }
+ 1  for m in (clinical, dermoscopy, metadata):
+ 2      op_m = EvidentialHead_m(encode_m(x_m))  if m in A(x)  else vacuous
+ 3  (b, u) = fold_DS(op_*);  C = max conflict over the fold
+ 4  p = b + u/K;  ŷ = argmax p;  p_mal = Σ_{k∈M} p_k
+ 5  set = binary_conformal(p_mal)                     # Mondrian LAC
+ 6  if C > C_cal:                         return DEFER(CONFLICT)
+ 7  blocked = (ŷ benign and malignant ∈ set) or set = ∅ or (1−u) < λ̂
+ 8  R_P = Σ_y p(y) L(y, ŷ);  R_A = R_P − ĥ(x) + c_acq;  R_D = c_def
+ 9  if blocked or R_D < R_P:
+10      if dermoscopy not yet acquired and R_A < R_D:  return ACQUIRE(dermoscopy)
+11      return PROCEED(ŷ, LOW)                         # confirmation required
+12  if dermoscopy not yet acquired and R_A < R_P:      return ACQUIRE(dermoscopy)
+13  return PROCEED(ŷ, HIGH)
 ```
+
+Stage B repeats lines 1–13 with the acquired dermoscopy and no further acquisition.
 
 ---
 

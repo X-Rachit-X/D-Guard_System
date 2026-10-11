@@ -1,5 +1,4 @@
-"""src/llm/__init__.py — LLM package for DERMA-GUARD v4.0."""
+"""src/llm - optional local LLM (Ollama) used by the report agent to write prose."""
 from src.llm.client import OllamaClient
-from src.llm.verification import stage1_verify, stage2_verify
 
-__all__ = ["OllamaClient", "stage1_verify", "stage2_verify"]
+__all__ = ["OllamaClient"]

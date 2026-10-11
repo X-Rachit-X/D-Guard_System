@@ -73,6 +73,11 @@ class NativeResult:
     patient_message: str
     doctor_message: str
     classes: List[str] = field(default_factory=list)
+    # Filled by src/agents/pipeline.py; empty when the engine is used alone.
+    embeddings: Dict[str, Optional[np.ndarray]] = field(default_factory=dict)
+    quality: Dict[str, Optional[Dict]] = field(default_factory=dict)
+    similar: Dict = field(default_factory=dict)
+    report: Dict = field(default_factory=dict)
 
     @property
     def action(self) -> str:
@@ -90,6 +95,9 @@ class NativeResult:
             "reliability_for_tentative": self.reliability_for_tentative,
             "patient_message": self.patient_message,
             "doctor_message": self.doctor_message,
+            "quality": self.quality,
+            "similar": self.similar,
+            "report": self.report,
         }
 
 
@@ -252,7 +260,8 @@ class NativeEngine:
             cost=self.bundle["cost"], malignant_classes=self.malignant,
             num_classes=self.K, conflict_threshold=cal["conflict_threshold"],
             lambda_hat=cal["lambda_hat"], label_rule=self.bundle["label_rule"],
-            ambiguity_gate=self.bundle["ambiguity_gate"])
+            ambiguity_gate=self.bundle["ambiguity_gate"],
+            defer_mode=self.bundle.get("defer_mode", "standard"))
         pset = cal["sets"].predict_sets(prob[None, :])[0]
 
         if has_derm:
@@ -283,6 +292,10 @@ class NativeEngine:
             patient_message=explain_patient(decision, self.classes, MILK_CLASS_FULL_NAMES),
             doctor_message=explain_doctor(decision, self.classes, MILK_CLASS_FULL_NAMES),
             classes=self.classes,
+            embeddings={
+                "clinical": z_img[0].cpu().numpy() if has_clin else None,
+                "meta": z_meta[0].cpu().numpy() if has_meta else None,
+            },
         )
 
     def _acq_features(self, prob, u, conflict, mod_u):

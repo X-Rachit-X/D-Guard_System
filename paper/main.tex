@@ -60,23 +60,24 @@ email@domain}
 % =============================================================================
 \begin{abstract}
 Skin-lesion classifiers return a confident label even when the evidence does not
-support one: a softmax output cannot express ignorance, and naive multimodal fusion
-cannot discount an uninformative input. We present \dguard{}, a decision layer that,
-for each patient, chooses among three actions---answer (\PROCEED{}), request a
-dermoscopic image (\ACQUIRE{}), or hand the case to a clinician (\DEFER{}). Each input
-modality is given its own evidential head producing belief and ignorance; opinions are
-combined with Dempster--Shafer's rule, which removes absent modalities exactly and
-separates \emph{conflict} between sources from shared \emph{ignorance}. A
-class-conditional conformal set over \{benign, malignant\} blocks false reassurance, a
-Learn-then-Test threshold certifies the malignancy-miss risk, and an explicit cost
-matrix with a learned acquisition-value estimator selects the cheapest action.
-Deferred cases still receive an unconfirmed tentative opinion and an urgency flag. On
-MILK10k, where every lesion has a paired clinical and dermoscopic image, the
-acquisition question is measured rather than simulated. On 787 held-out lesions,
-\dguard{} answers 36.8\% of cases with a 1.7\% malignancy-miss rate, against 5.2\% for
-confidence-based abstention at identical coverage, while requesting dermoscopy for
-6.4\% of patients. We report the negative results alongside: fusing all modalities
-does not beat the best pair, and on mean cost an always-answer policy is cheaper.
+support one: softmax cannot express ignorance, and naive multimodal fusion cannot discount
+an uninformative input. We present \dguard{}, a decision layer that, for each patient,
+answers with \emph{high} confidence, requests a dermoscopic image, answers with explicitly
+\emph{low} confidence pending clinician confirmation, or defers when the inputs contradict
+each other. Each modality has its own evidential head producing belief and ignorance;
+opinions are combined with Dempster--Shafer's rule, which removes absent modalities exactly
+and separates conflict from shared ignorance. A class-conditional conformal set over
+\{benign, malignant\} blocks false reassurance, a Learn-then-Test threshold certifies the
+malignancy-miss risk, an explicit cost matrix with a learned acquisition-value estimator
+selects the action, and an image-quality agent withholds high confidence from photographs
+outside the calibrated range. On MILK10k, where every lesion pairs a clinical and a
+dermoscopic image, 90.3\% of 787 held-out patients receive an answer. High-confidence
+answers (35.3\%) are 83.8\% accurate over 11 classes and miss 1.8\% of malignancies,
+against 4.7\% for confidence-based abstention at identical coverage, with dermoscopy
+requested for 6.4\% of patients. Under controlled degradation the evidential model alone
+grows \emph{more} confident on blurred photographs; the quality gate removes those
+answers. We report negative results alongside: fusing all modalities does not beat the
+best pair, and on mean cost an always-answer policy is cheaper.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -101,10 +102,13 @@ A clinician facing the same uncertainty does not simply guess. They either look 
 closely---for skin lesions, typically with a dermatoscope---or refer the patient. We
 formalise this as a three-action decision:
 \begin{itemize}
-\item \PROCEED{}: state a diagnosis now;
+\item \PROCEED{} (high confidence): state a diagnosis, all safety checks passed;
 \item \ACQUIRE{}: request a dermoscopic image, then decide again;
-\item \DEFER{}: route to a clinician, with the system's tentative opinion attached.
+\item \PROCEED{} (low confidence): state the most likely diagnosis, explicitly marked as
+unreliable and routed for clinician confirmation;
+\item \DEFER{}: route to a clinician when the inputs contradict each other.
 \end{itemize}
+Every outcome carries the system's tentative opinion, so no patient receives nothing.
 
 \noindent\textbf{Contributions.}
 \begin{enumerate}
@@ -115,9 +119,12 @@ cost matrix into a single calibrated \PROCEED{}/\ACQUIRE{}/\DEFER{} policy
 \item A measurement of the value of acquiring dermoscopy on real paired data
 (MILK10k~\cite{milk10k}), with a learned acquisition-value estimator evaluated against
 random and uncertainty-based acquisition (Sec.~\ref{sec:results}).
-\item A working care platform---patient intake, a prioritised clinician queue, follow-up
-with change detection, and a full audit trail---built around the policy
-(Sec.~\ref{sec:system}).
+\item A working care platform and agent pipeline---image-quality control, retrieval of
+similar confirmed cases, a report writer whose claims are verified against the evidence,
+a prioritised clinician queue, follow-up with change detection, and an audit trail---built
+around the policy (Sec.~\ref{sec:system}).
+\item A stress evaluation showing that evidential ignorance alone misses blur and
+under-exposure, and that a quality gate restores safety (Sec.~\ref{sec:stress}).
 \item A transparent report of what did not work, including a fusion hypothesis that
 failed and two design errors uncovered by the evaluation (Sec.~\ref{sec:negative}).
 \end{enumerate}
@@ -272,6 +279,21 @@ $\hat h$ is a gradient-boosted regressor fitted on validation lesions, mapping
 stage-A evidence ($u$, $C$, $\max_k p_k$, $p_{\text{mal}}$, normalised entropy, $u_m$) to
 the realised loss reduction from adding dermoscopy.
 
+\textbf{Confidence tiers.} In standard mode, any gate violation or a lower deferral cost
+yields \DEFER{}. In the \emph{minimal-deferral} mode we deploy, such cases instead return
+\PROCEED{} with a \emph{low}-confidence tier: the most probable diagnosis is stated,
+labelled unreliable, and queued for confirmation. Only conflict above threshold (no single
+answer to state) and the absence of evidence still defer. The high-confidence tier is
+identical in both modes, so all guarantees and baseline comparisons concern the same set
+of answers.
+
+\textbf{Quality gate.} An image-quality agent measures sharpness (variance of the
+Laplacian), brightness, contrast, glare and resolution. Thresholds are percentiles of the
+same statistics on 300 training images of each type: values beyond the 5th/95th percentile
+produce advice to the patient; values beyond the 1st/99th percentile mark the photograph as
+outside the calibrated range, and a high-confidence answer on it is downgraded to low
+confidence. The gate never increases confidence.
+
 \textbf{Tentative opinion.} Every decision---including \DEFER{} and \ACQUIRE{}---carries
 the most probable diagnosis, a three-class differential, $p_{\text{mal}}$, and an urgency
 flag (urgent if $p_{\text{mal}}\ge 0.3$ or a malignant class is in the conformal set). It is
@@ -294,9 +316,15 @@ $p_{\text{mal}}$ or a change to a malignant tentative diagnosis returns the case
 queue as urgent. Every event is written to an append-only audit log together with the
 policy configuration that produced it. An agent pipeline (specialist models, an evidence
 auditor, a retrieval agent and a report writer with claim verification) produces the
-narrative; retrieval of similar training cases is restricted to the training split and
-excluded from the decision path, because exchangeability-based guarantees do not survive
-a decision that depends on a changing corpus.
+narrative. The final pipeline is: image-quality agent $\rightarrow$ decision engine
+$\rightarrow$ retrieval agent (the six most similar of 3{,}667 \emph{training} lesions by
+cosine similarity of the model's own embeddings, shown with their histopathology-confirmed
+diagnoses) $\rightarrow$ report agent (a structured report, optionally rewritten by a local
+LLM and accepted only if every diagnosis it names appears in the evidence, every
+percentage matches an evidence value, and the confidence tier and confirmation requirement
+are preserved). Only the decision engine decides; retrieval is excluded from the decision
+path because exchangeability-based guarantees do not survive a decision that depends on a
+changing corpus. The platform is exposed through a web application and a REST API.
 
 % =============================================================================
 \section{Experimental Setup}\label{sec:setup}
@@ -382,29 +410,50 @@ it.
 
 \begin{table*}[t]
 \centering
-\caption{Two-stage decision on the MILK10k test split ($c_{\text{miss}}=5$). Miss: malignant
-called benign, among answered. FA: benign called malignant, among answered benign.}
+\caption{Two-stage decision on the MILK10k test split ($c_{\text{miss}}=5$, quality gate on).
+Coverage is the high-confidence (\PROCEED{}-high) rate; baselines B3 are matched to it.
+Miss: malignant called benign, among answered. FA: benign called malignant, among answered
+benign.}
 \label{tab:policy}
-\begin{tabular}{lcccccc}
+\begin{tabular}{lccccccc}
 \toprule
-Policy & Answered & Dermoscopy & Accuracy & Miss & FA & Mean cost \\
+Policy & Answered & Dermoscopy & Acc. & Bal.\ acc. & Miss & FA & Mean cost \\
 \midrule
-B1 always answer, photo & 100\% & 0\% & 0.644 & 5.2\% & 52.4\% & \textbf{0.703} \\
-B2 always acquire, answer & 100\% & 100\% & 0.690 & 6.5\% & 44.7\% & 1.187 \\
-B3 max-softmax abstention (matched coverage) & 36.8\% & 0\% & 0.841 & 5.2\% & 23.6\% & 1.098 \\
-B3 + dermoscopy for all & 36.8\% & 100\% & \textbf{0.931} & 2.1\% & 26.2\% & 1.517 \\
-B5 random acquisition, same rate & 100\% & 6.4\% & 0.651 & 5.2\% & 51.4\% & 0.726 \\
-B5 entropy acquisition, same rate & 100\% & 6.4\% & 0.654 & 5.6\% & 49.5\% & 0.732 \\
+B1 always answer, photo & 100\% & 0\% & 0.644 & 0.280 & 5.2\% & 52.4\% & \textbf{0.703} \\
+B2 always acquire, answer & 100\% & 100\% & 0.690 & 0.378 & 6.5\% & 44.7\% & 1.187 \\
+B3 max-softmax abstention & 35.3\% & 0\% & 0.842 & 0.300 & 4.7\% & 24.1\% & 1.109 \\
+B3 + dermoscopy for all & 35.3\% & 100\% & \textbf{0.935} & \textbf{0.587} & 2.2\% & 22.5\% & 1.535 \\
+B5 random acquisition & 100\% & 6.4\% & 0.651 & 0.286 & 5.2\% & 51.4\% & 0.726 \\
+B5 entropy acquisition & 100\% & 6.4\% & 0.654 & 0.285 & 5.6\% & 49.5\% & 0.732 \\
 \midrule
-\dguard{} & 36.8\% & 6.4\% & 0.838 & \textbf{1.7\%} & 32.7\% & 1.086 \\
+\dguard{} (high-confidence tier) & 35.3\% & 6.4\% & 0.838 & 0.355 & \textbf{1.8\%} & 34.8\% & 1.105 \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
+\begin{table}[t]
+\centering
+\caption{What patients receive (\dguard{}, minimal-deferral mode, test split).}
+\label{tab:tiers}
+\begin{tabular}{lcccc}
+\toprule
+Outcome & Share & Acc. & Top-3 & Miss \\
+\midrule
+\PROCEED{} high & 35.3\% & 0.838 & -- & 1.8\% \\
+\PROCEED{} low (confirm) & 55.0\% & 0.517 & 0.822 & 6.2\% \\
+\DEFER{} (conflict) & 9.7\% & -- & -- & -- \\
+\midrule
+answered in total & 90.3\% & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 Table~\ref{tab:policy} gives the main result. At the same coverage as max-softmax
-abstention, \dguard{} reduces the malignancy-miss rate from 5.2\% to 1.7\% at similar
-accuracy and lower mean cost, while requesting dermoscopy for 6.4\% of patients rather than
-all. Requesting dermoscopy for everyone (B3 + dermoscopy) is more accurate but 40\% more
+abstention, \dguard{} reduces the malignancy-miss rate from 4.7\% to 1.8\% at similar
+accuracy, higher balanced accuracy (0.355 vs.\ 0.300) and slightly lower mean cost, while
+requesting dermoscopy for 6.4\% of patients rather than all. Table~\ref{tab:tiers} shows
+what patients receive: 90.3\% get an answer; low-confidence answers are exactly right for
+51.7\% of patients but contain the true diagnosis in their top three for 82.2\%. Requesting dermoscopy for everyone (B3 + dermoscopy) is more accurate but 40\% more
 costly and presumes a dermatoscope at every encounter. The acquisition estimator captures
 substantially more of dermoscopy's benefit than uncertainty-based selection:
 AE $=+0.27$ vs.\ $+0.01$ for entropy at $c_{\text{miss}}=5$, and $+0.40$ vs.\ $-0.06$ at
@@ -417,19 +466,20 @@ With native evidential heads, $1-u$ ranks errors as well as max-softmax (AUGRC 0
 \centering
 \caption{Sensitivity to the cost of a missed malignancy.}
 \label{tab:cost}
-\begin{tabular}{ccccc}
+\begin{tabular}{cccccc}
 \toprule
-$c_{\text{miss}}$ & Answered & Miss & B3 miss & Malignant answers \\
+$c_{\text{miss}}$ & Answered & High & Miss (high) & B3 miss & Malignant answers \\
 \midrule
-2 & 40\% & 4.1\% & 5.1\% & 80\% \\
-3 & 39\% & 4.2\% & 4.9\% & 82\% \\
-5 & 37\% & 1.7\% & 5.2\% & 86\% \\
-10 & 32\% & 0.0\% & 3.5\% & 100\% \\
+2 & 89.3\% & 38.1\% & 4.3\% & 5.0\% & 81\% \\
+3 & 90.2\% & 37.5\% & 4.4\% & 5.1\% & 83\% \\
+5 & 90.3\% & 35.3\% & 1.8\% & 4.7\% & 87\% \\
+10 & 90.5\% & 31.3\% & 0.0\% & 2.4\% & 100\% \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-Table~\ref{tab:cost}: raising $c_{\text{miss}}$ trades coverage for safety. At
+Table~\ref{tab:cost}: raising $c_{\text{miss}}$ moves answers from the high to the low
+tier and trades high-confidence coverage for safety; the answered share stays near 90\%. At
 $c_{\text{miss}}=10$ the miss rate is zero, but every answer is a malignant diagnosis: on a
 population that is 73.6\% malignant, a system that only confirms cancers cannot reassure
 anyone. We regard $c_{\text{miss}}=5$ as the balanced operating point; the choice is a
@@ -444,6 +494,40 @@ for melanoma the clinical photograph is the most reliable single source (0.52 vs
 These measured values replace a hand-specified prior used in an earlier version of the
 system, which assumed 0.96 image reliability for melanoma. They are shown to clinicians
 and never alter a probability.
+
+% =============================================================================
+\section{Robustness to Degraded Evidence}\label{sec:stress}
+
+We degrade the stage-A input of 300 test lesions without retraining
+(Table~\ref{tab:stress}). Noise, heavy JPEG compression and withheld metadata raise mean
+ignorance, and the high-confidence rate falls accordingly; withheld metadata also triples
+the dermoscopy request rate (7\% to 22\%). Gaussian blur, however, \emph{lowers} ignorance
+(0.679 to 0.605) and raises the high-confidence rate (35\% to 46\%), and on under-exposed
+photographs the few high-confidence answers missed 12.5\% of malignancies: evidential
+ignorance alone does not detect these failures. The image-quality agent flags every
+blurred and every under-exposed photograph; with the quality gate, neither produces a
+high-confidence answer, and no condition raises the high-tier miss rate above the clean
+level.
+
+\begin{table}[t]
+\centering
+\caption{DERMA-STRESS on 300 test lesions (stage A). High: share of high-confidence
+answers; Miss: malignancy-miss rate among them. Gate: with the quality gate.}
+\label{tab:stress}
+\begin{tabular}{lccccc}
+\toprule
+Condition & $\bar u$ & High & Miss & High (gate) & Miss (gate) \\
+\midrule
+clean & 0.679 & 35\% & 2.9\% & 33\% & 3.0\% \\
+blur & 0.605 & 46\% & 0.7\% & 0\% & -- \\
+dark & 0.723 & 11\% & 12.5\% & 0\% & -- \\
+noise & 0.821 & 6\% & 0.0\% & 6\% & 0.0\% \\
+JPEG & 0.741 & 17\% & 4.0\% & 14\% & 0.0\% \\
+occlusion & 0.634 & 7\% & 4.5\% & 5\% & 0.0\% \\
+no metadata & 0.754 & 33\% & 1.0\% & 32\% & 1.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % =============================================================================
 \section{What Did Not Work}\label{sec:negative}
@@ -467,9 +551,15 @@ reported only the final pairwise conflict, which on MILK10k is always against th
 text modality and therefore zero. Conflict was not in the loss, so weights were unaffected;
 we recompute it from the checkpoint.
 
-\textbf{Mean cost favours always answering} (Table~\ref{tab:policy}). Each deferral costs
-1.5 and \dguard{} defers 63\% of cases. The advantage of \dguard{} is the safety of the
-answers it gives at matched coverage, not throughput.
+\textbf{Mean cost favours always answering} (Table~\ref{tab:policy}). Every case that
+needs a clinician (low tier or deferred) is charged the review cost of 1.5. The advantage of
+\dguard{} is the safety of its high-confidence answers at matched coverage, not throughput.
+
+\textbf{Post-hoc imbalance correction did not transfer.} Logit adjustment tuned on
+validation raised validation macro-F1 from 0.361 to 0.439 but lowered test macro-F1 from
+0.376 to 0.359.
+
+\textbf{Ignorance misses blur} (Sec.~\ref{sec:stress}).
 
 % =============================================================================
 \section{Limitations}
@@ -488,11 +578,12 @@ system is a research prototype without clinical validation.
 
 \dguard{} turns per-modality evidence into a calibrated choice among answering, acquiring
 dermoscopy and deferring, and keeps deferral informative by attaching a tentative opinion
-and urgency to every case. On paired clinical--dermoscopic data it cuts the malignancy-miss
-rate by a factor of three relative to confidence-based abstention at equal coverage while
-acquiring dermoscopy for few patients. Its main limitation---answering only about a third
-of cases alone---is set by the classifier rather than the policy, which makes stronger
-encoders and multi-seed evaluation the immediate next steps.
+and urgency to every case. On paired clinical--dermoscopic data it answers nine in ten patients, and its
+high-confidence answers miss malignancy less than half as often as confidence-based
+abstention at equal coverage, while acquiring dermoscopy for few patients. A quality gate
+closes a failure that evidential ignorance alone leaves open. The main limitation---only
+about a third of answers are high-confidence---is set by the classifier rather than the
+policy, which makes stronger encoders and multi-seed evaluation the immediate next steps.
 
 \section*{Reproducibility}
 Code, configuration, per-case test predictions and every script used for the tables are

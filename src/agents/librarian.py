@@ -1,65 +1,57 @@
-"""src/agents/librarian.py — Librarian Agent wraps RAGIndex for similar-case retrieval."""
+"""
+src/agents/librarian.py - Similar-case retrieval over MILK10k training lesions.
+
+Shows the clinician confirmed past cases that look like this one - their photos
+and their histopathology-backed diagnoses. Retrieval is EXPLANATION ONLY:
+
+  * the index holds TRAINING lesions only (asserted when built), so a neighbour
+    can never carry a held-out test label into what a reader sees;
+  * it never changes a probability, a threshold or an action. The calibrated
+    guarantees assume exchangeable data, and a decision that depended on a
+    retrieved corpus would break that assumption.
+
+Embeddings are the trained model's own 256-d projections of the clinical photo
+and of the metadata, so "similar" means similar to the model, which is what a
+reader needs in order to understand its opinion.
+"""
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from src.retrieval.rag_index import RAGIndex
 
+SPEC = {"clinical_embedding": 256, "metadata_embedding": 256}
 
-class LibrarianAgent:
-    """Manages the RAG index and serves similar-case queries to the Orchestrator.
 
-    Wraps RAGIndex. The Orchestrator calls this via tool-calling.
-    """
-
-    def __init__(self, index_path: Optional[str] = None, k: int = 8):
+class MilkLibrarian:
+    def __init__(self, index: RAGIndex, k: int = 6):
+        if index.source_split != "train":
+            raise ValueError(f"retrieval index must be built from the training split, "
+                             f"got source_split={index.source_split!r}")
+        self.index = index
         self.k = k
-        self._index = RAGIndex()
-        self._loaded = False
 
-        if index_path and Path(index_path).with_suffix(".index").exists():
-            try:
-                self._index.load(index_path)
-                self._loaded = True
-            except Exception as e:
-                import warnings
-                warnings.warn(f"[Librarian] Could not load index: {e}")
+    @classmethod
+    def load(cls, path: str | Path, k: int = 6) -> "MilkLibrarian":
+        return cls(RAGIndex().load(str(path)), k=k)
 
-    def retrieve(
-        self,
-        query_embeddings: Dict,
-        predicted_diagnosis: Optional[int] = None,
-    ) -> Dict:
-        """Retrieve k similar training cases.
-
-        Args:
-            query_embeddings: dict with clinical_embedding, dermoscopy_embedding,
-                              metadata_embedding, text_embedding
-            predicted_diagnosis: for agreement rate computation
-
-        Returns:
-            dict with similar_cases and agreement_rate
-        """
-        if not self._loaded:
-            return {"similar_cases": [], "agreement_rate": 0.0,
-                    "note": "RAG index not loaded — run scripts to build index first."}
-
-        return self._index.query(
-            query_embeddings,
-            k=self.k,
-            predicted_diagnosis=predicted_diagnosis,
-        )
-
-    def build_from_cases(self, training_cases: List[Dict]) -> "LibrarianAgent":
-        """Build index from training case list."""
-        self._index.add_training_cases(training_cases)
-        self._loaded = True
-        return self
-
-    def save(self, path: str):
-        self._index.save(path)
-
-    def load(self, path: str):
-        self._index.load(path)
-        self._loaded = True
+    def similar(self, clinical_emb: Optional[np.ndarray], meta_emb: Optional[np.ndarray],
+                tentative: Optional[str] = None) -> Dict:
+        out = self.index.query({"clinical_embedding": clinical_emb,
+                                "metadata_embedding": meta_emb}, k=self.k)
+        cases: List[Dict] = []
+        for c in out["similar_cases"]:
+            cases.append({
+                "lesion_id": c.get("lesion_id"),
+                "diagnosis": c.get("diagnosis"),
+                "similarity": round(float(c.get("distance", 0.0)), 4),
+                "clinical_path": c.get("clinical_path"),
+                "dermoscopy_path": c.get("dermoscopy_path"),
+                "age": c.get("age"), "site": c.get("site"),
+            })
+        agree = (sum(c["diagnosis"] == tentative for c in cases) / len(cases)
+                 if cases and tentative else None)
+        return {"similar_cases": cases, "agreement": agree}

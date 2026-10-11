@@ -1,20 +1,9 @@
-"""src/evidence/__init__.py — Evidence profiling package."""
-from src.evidence.quality import compute_image_quality, compute_text_quality, compute_metadata_quality
-from src.evidence.reliability import ReliabilityMLP, compute_predictive_entropy, compute_reliability
-from src.evidence.consistency import compute_consistency
-from src.evidence.missingness import compute_missingness, ALL_MODALITIES
+"""src/evidence - evidential opinions and Dempster-Shafer fusion (reference implementation)."""
 from src.evidence.evidential import (
     EvidentialHead, Opinion, conflict_and_ignorance, ds_combine, edl_loss,
     fold_opinions, gate_opinion, opinion_from_evidence, opinion_from_probs, vacuous,
 )
-from src.evidence.utility import compute_utility_retrospective, approximate_utility_from_training
 
-__all__ = [
-    "compute_image_quality", "compute_text_quality", "compute_metadata_quality",
-    "ReliabilityMLP", "compute_predictive_entropy", "compute_reliability",
-    "compute_consistency", "compute_missingness", "ALL_MODALITIES",
-    "compute_utility_retrospective", "approximate_utility_from_training",
-    "EvidentialHead", "Opinion", "ds_combine", "fold_opinions", "vacuous",
-    "gate_opinion", "opinion_from_evidence", "opinion_from_probs",
-    "edl_loss", "conflict_and_ignorance",
-]
+__all__ = ["EvidentialHead", "Opinion", "ds_combine", "fold_opinions", "vacuous",
+           "gate_opinion", "opinion_from_evidence", "opinion_from_probs",
+           "edl_loss", "conflict_and_ignorance"]

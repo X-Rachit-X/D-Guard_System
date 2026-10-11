@@ -262,7 +262,31 @@ BEN_OTH (4 test lesions), INF (6) and MAL_OTH (1) get F1 = 0 — the model never
 them. Class weighting in the loss was not enough at this data size. No claim is made about
 these classes.
 
-## 23. Still unknown
+## 23. Post-hoc imbalance correction overfit the validation set
+
+Logit adjustment (dividing probabilities by the training class prior to the power τ, a
+standard long-tail fix) raised **validation** macro-F1 from 0.361 to 0.439 at τ = 0.1 — and
+**lowered test** macro-F1 from 0.376 to 0.359. The best τ was chosen on a handful of
+rare-class validation lesions and did not transfer. Not used. Real accuracy gains need a
+better image encoder (DermLIP), not post-hoc tuning.
+
+## 24. The evidential model gets MORE confident on blurred photos
+
+Under DERMA-STRESS, Gaussian blur **lowered** mean ignorance (0.68 → 0.61) and **raised** the
+HIGH-tier rate (35% → 46%). Darkening a photo left ignorance nearly unchanged while HIGH
+answers missed 12.5% of cancers. So `u` alone does not detect these failures — blur removes
+texture the model reads as "less ambiguous". The image-quality agent flagged 100% of both.
+Fix: a severe quality issue (outside the 1st/99th percentile of training photos) downgrades
+a HIGH answer to LOW; with it, blurred and dark photos produce no HIGH answers.
+
+## 25. A setting saved in the wrong place
+
+`defer_mode` was written into the policy settings twice and never into the calibration
+bundle, so the app silently ran in the old standard mode while the experiment reported
+minimal mode. Caught because the demo deferred a case for low confidence, which minimal
+mode cannot do. The bundle now records it and the engine reads it.
+
+## 26. Still unknown
 
 Not yet answerable, and marked as such rather than guessed:
 
@@ -270,7 +294,8 @@ Not yet answerable, and marked as such rather than guessed:
 - whether a dermatology encoder (DermLIP) changes H1
 - whether per-modality `u_m` genuinely predicts per-modality error (**H4**)
 - whether DS conflict fires on real contradictions rather than merely hard cases (**H5**) —
-  now testable, since conflict is computed correctly
+  testable now that conflict is computed correctly; one demo case (true melanoma, photo
+  says NV, details disagree) is encouraging but anecdotal
 - whether the guarantee degrades gracefully under shift (**H3**, needs the PAD-UFES run)
 - whether retrieval adds anything over `u` alone
 

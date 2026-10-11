@@ -1,36 +1,21 @@
-torch>=2.0.0
+# D-GUARD - runtime
+torch>=2.0
 torchvision
-timm
-transformers>=4.35.0
-accelerate
-huggingface_hub
-faiss-cpu
-hydra-core
-omegaconf
-wandb
-mlflow
-fastapi
-uvicorn[standard]
-streamlit
-pillow
-opencv-python
-albumentations
-scikit-learn
-scipy
 numpy
 pandas
-matplotlib
-seaborn
-plotly
-pytest
-pytest-cov
-black
-isort
-flake8
-mypy
-structlog
+scikit-learn
+pillow
+faiss-cpu
+joblib
+streamlit>=1.40
+fastapi
+uvicorn
 python-multipart
-httpx
-requests
-imagehash
-tensorboard
+pydantic>=2
+requests            # optional local LLM (Ollama) for report prose
+
+# training on Kaggle only (notebooks/kaggle_train_dguard.py)
+# transformers, open_clip_torch
+
+# development
+pytest

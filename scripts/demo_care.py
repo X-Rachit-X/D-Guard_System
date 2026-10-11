@@ -2,11 +2,12 @@
 scripts/demo_care.py - The whole system, end to end, in the terminal.
 
 Real trained model, real held-out MILK10k lesions (never training lesions).
-Three patients, one per path through the system:
+Four patients, one per outcome:
 
-  1  PROCEED   the system is confident and answers, with instructions
-  2  ACQUIRE   the system asks for a dermoscopy photo, then decides
-  3  DEFER     the system gives a tentative opinion and hands over to a doctor,
+  1  PROCEED (HIGH)  confident answer, with instructions and a follow-up
+  2  ACQUIRE         asks for a dermoscopy photo, then decides
+  3  PROCEED (LOW)   answers, clearly marked low confidence; a doctor confirms
+  4  DEFER           the sources contradict; tentative opinion + doctor review,
                who reviews it and books a follow-up; at the follow-up a new photo
                is checked for change
 
@@ -45,7 +46,7 @@ def show(label, text):
         print(textwrap.fill(line, W, initial_indent="  ", subsequent_indent="    "))
 
 
-def pick_cases(engine, n_scan=400):
+def pick_cases(engine, n_scan=787):
     """Find one real test lesion per path. Deterministic order."""
     test = engine.splits["test"]
     found = {}
@@ -58,13 +59,18 @@ def pick_cases(engine, n_scan=400):
         act = a.action
         if act == "ACQUIRE" and "ACQUIRE" not in found:
             b = engine.assess_paths(cp, dp, meta)
-            if b.action == "PROCEED":
+            if (b.action == "PROCEED" and b.decision.tier != "LOW"
+                    and b.decision.prediction == int(r["label_idx"])):
                 found["ACQUIRE"] = (r, meta, cp, dp)
         elif act == "DEFER" and "DEFER" not in found and a.decision.tentative is not None:
             found["DEFER"] = (r, meta, cp, dp)
-        elif act == "PROCEED" and "PROCEED" not in found:
+        elif act == "PROCEED" and a.decision.tier == "LOW" and "LOW" not in found \
+                and a.decision.urgency == "URGENT":
+            found["LOW"] = (r, meta, cp, dp)
+        elif (act == "PROCEED" and a.decision.tier != "LOW" and "PROCEED" not in found
+              and a.decision.prediction == int(r["label_idx"])):
             found["PROCEED"] = (r, meta, cp, dp)
-        if len(found) == 3:
+        if len(found) == 4:
             break
     return found
 
@@ -78,12 +84,23 @@ def _meta(engine, r):
 
 def explain_result(out):
     res = out["result"]
-    print(f"\n  ACTION   : {out['action']}   (stage {res.stage}, urgency {out['urgency']})")
+    tier = f" [{res.decision.tier} confidence]" if res.decision.tier else ""
+    print(f"\n  ACTION   : {out['action']}{tier}   (stage {res.stage}, urgency {out['urgency']})")
     print(f"  tentative: {out['tentative']}   P(malignant) "
           f"{res.decision.p_malignant:.0%}   ignorance u {res.ignorance:.3f}   "
           f"conflict C {res.conflict:.3f}")
     print(f"  dynamic fusion weights (evidence share, this case): {res.fusion_weights}")
     print(f"  what each source says on its own: {res.modality_votes}")
+    sim = (res.similar or {}).get("similar_cases") or []
+    if sim:
+        print(f"  similar confirmed past cases: "
+              f"{[c['diagnosis'] for c in sim]}  (agreement {res.similar.get('agreement') or 0:.0%})")
+    q = [f"{k}: {v['issues']}" for k, v in (res.quality or {}).items() if v and v["issues"]]
+    if q:
+        print(f"  photo quality warnings: {q}")
+    if res.report:
+        print(f"  report ({res.report['source']}): "
+              f"{res.report['text'].splitlines()[0]}")
     if res.reliability_for_tentative:
         rel = {k: (None if v is None else round(v, 2))
                for k, v in res.reliability_for_tentative.items()}
@@ -97,14 +114,17 @@ def main() -> int:
     ap.add_argument("--db", default=":memory:")
     args = ap.parse_args()
 
-    from src.native import NativeEngine
+    from src.agents.pipeline import DGuardPipeline
     banner("D-GUARD care platform - live demo with the trained MILK10k model")
     print("loading model and calibration ...")
-    engine = NativeEngine()
+    engine = DGuardPipeline.build()
     svc = CareService(engine, CareStore(args.db), upload_dir=ROOT / "data" / "care" / "demo_uploads")
     print("finding one real held-out lesion for each path ...")
+    print("(examples are SELECTED to illustrate each path - the HIGH and ACQUIRE examples")
+    print(" are correctly answered cases. Real accuracy, including confident errors, is in")
+    print(" docs/05_results.md: HIGH tier 83.8% accurate, 34.8% false alarms on benign.)")
     cases = pick_cases(engine)
-    missing = {"PROCEED", "ACQUIRE", "DEFER"} - set(cases)
+    missing = {"PROCEED", "ACQUIRE", "LOW", "DEFER"} - set(cases)
     if missing:
         print(f"note: no example found for {missing} in the scanned lesions")
 
@@ -146,10 +166,24 @@ def main() -> int:
         print(f"\n  ignorance before -> after dermoscopy: "
               f"{out['result'].ignorance:.3f} -> {out2['result'].ignorance:.3f}")
 
+    # ------------------------------------------------------- low confidence
+    if "LOW" in cases:
+        r, meta, cp, dp = cases["LOW"]
+        banner(f"PATIENT 3 - answered, but LOW confidence   (lesion {r['lesion_id']}, "
+               f"truth {r['label_raw']})")
+        pid = svc.register_patient("Patient Low", age=meta["age"], sex=meta["sex"])
+        cid = svc.open_case(pid, site=meta["site"])
+        svc.submit_photo(cid, cp)
+        svc.submit_details(cid, meta)
+        out = svc.assess(cid)
+        explain_result(out)
+        show("what the patient sees", out["result"].patient_message)
+        print(f"\n  case status: {svc.store.case(cid)['status']}  (a doctor confirms it)")
+
     # ------------------------------------------------------------ patient 3
     if "DEFER" in cases:
         r, meta, cp, dp = cases["DEFER"]
-        banner(f"PATIENT 3 - the system will not decide alone   (lesion "
+        banner(f"PATIENT 4 - the system will not decide alone   (lesion "
                f"{r['lesion_id']}, truth {r['label_raw']})")
         pid = svc.register_patient("Patient Three", age=meta["age"], sex=meta["sex"])
         cid = svc.open_case(pid, site=meta["site"])
@@ -183,7 +217,7 @@ def main() -> int:
               f"{ch['p_malignant']:.0%}   alert: {ch['alert']}")
         print(f"  status now: {svc.store.case(cid)['status']}")
 
-        banner("CASE 3 TIMELINE (everything is recorded)")
+        banner("CASE TIMELINE (everything is recorded)")
         for e in svc.timeline(cid):
             print(f"  {e['t'][11:19]}  {e['type']:10} {e['what']}")
 

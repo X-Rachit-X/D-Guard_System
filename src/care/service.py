@@ -153,9 +153,10 @@ class CareService:
 
         self.store.add_message(cid, "system", "result", result.patient_message)
         change = self._change_check(previous, d.p_malignant, tentative)
-        self._route(cid, result.action, d.urgency, change)
+        tier = getattr(d, "tier", None)
+        self._route(cid, result.action, d.urgency, change, tier)
         return {"assessment_id": aid, "action": result.action, "urgency": d.urgency,
-                "tentative": tentative, "change": change, "result": result}
+                "tier": tier, "tentative": tentative, "change": change, "result": result}
 
     def _change_check(self, previous: Optional[Dict], p_mal: Optional[float],
                       tentative: Optional[str]) -> Optional[Dict]:
@@ -173,7 +174,7 @@ class CareService:
                 "alert": bool(alert)}
 
     def _route(self, cid: int, action: str, urgency: Optional[str],
-               change: Optional[Dict]) -> None:
+               change: Optional[Dict], tier: Optional[str] = None) -> None:
         s = self.store
         if change and change["alert"]:
             s.set_status(cid, CaseStatus.AWAITING_DOCTOR, "URGENT")
@@ -197,7 +198,18 @@ class CareService:
                           f"in person straight away.")
             return
 
-        # PROCEED
+        if action == "PROCEED" and tier == "LOW":
+            # The patient already has the (clearly labelled) low-confidence
+            # answer; a doctor must confirm it before anyone acts on it.
+            s.set_status(cid, CaseStatus.AWAITING_DOCTOR, urgency)
+            when = "within 48 hours" if urgency == "URGENT" else "within 7 days"
+            s.add_message(cid, "system", "instruction",
+                          f"Because this assessment is low confidence, a doctor will "
+                          f"confirm it {when}. If the spot bleeds, grows quickly or "
+                          f"becomes painful before then, see a doctor in person.")
+            return
+
+        # PROCEED, HIGH confidence
         s.set_status(cid, CaseStatus.ASSESSED, urgency)
         days = AUTO_FOLLOWUP_DAYS.get(("PROCEED", urgency or "ROUTINE"))
         if days:
@@ -236,9 +248,12 @@ class CareService:
                 "p_malignant": a["p_malignant"] if a else None,
                 "waiting_since": c["updated_at"],
                 "unanswered_questions": max(0, len(open_q) - len(answered_after)),
-                "kind": "review" if c["status"] == CaseStatus.AWAITING_DOCTOR else "sign-off",
+                "tier": (a["result"].get("decision", {}).get("tier") if a else None),
+                "kind": ("sign-off" if c["status"] != CaseStatus.AWAITING_DOCTOR
+                         else "confirm" if a and a["result"].get("decision", {}).get("tier") == "LOW"
+                         else "review"),
             })
-        rank = lambda r: (0 if r["kind"] == "review" else 1,  # noqa: E731
+        rank = lambda r: ({"review": 0, "confirm": 1}.get(r["kind"], 2),  # noqa: E731
                           0 if r["urgency"] == "URGENT" else 1, r["waiting_since"])
         return sorted(out, key=rank)
 

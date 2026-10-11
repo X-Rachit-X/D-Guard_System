@@ -138,18 +138,6 @@ def test_query_strips_every_spec_key(tmp_path):
 # ---------------------------------------------------------------------------
 # Agreement
 # ---------------------------------------------------------------------------
-def test_agreement_is_none_without_a_diagnosis():
-    """None means 'not measured'; 0.0 means 'measured, nothing agreed'."""
-    from src.agents.orchestrator import _retrieval_agreement
-    assert _retrieval_agreement({"similar_cases": make_cases(4)}, None) is None
-    assert _retrieval_agreement(None, 1) is None
-    assert _retrieval_agreement({"similar_cases": []}, 1) is None
-
-
-def test_agreement_counts_matching_labels():
-    from src.agents.orchestrator import _retrieval_agreement
-    cases = [{"label": 1}, {"label": 1}, {"label": 2}, {"label": 0}]
-    assert _retrieval_agreement({"similar_cases": cases}, 1) == 0.5
 
 
 def test_agreement_is_a_proportion():
@@ -157,59 +145,3 @@ def test_agreement_is_a_proportion():
     for d in range(3):
         r = proportion_sharing_predicted_diagnosis(cases, d)
         assert 0.0 <= r <= 1.0
-
-
-# ---------------------------------------------------------------------------
-# The build script's leakage guard, on real data when present
-# ---------------------------------------------------------------------------
-FEATURES = Path("data/processed/features_v2.pt")
-real_only = pytest.mark.skipif(not FEATURES.exists(),
-                               reason="features_v2.pt not built")
-
-
-@real_only
-@pytest.mark.integration
-def test_build_script_verify_passes(tmp_path):
-    """Runs the real builder end to end; --verify asserts the no-leak property."""
-    out = tmp_path / "idx"
-    proc = subprocess.run(
-        [sys.executable, "scripts/build_rag_index.py", "--out", str(out), "--verify"],
-        capture_output=True, text=True, timeout=900,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert "VERIFY PASSED" in proc.stdout
-    assert out.with_suffix(".index").exists()
-
-
-@real_only
-@pytest.mark.integration
-def test_built_index_excludes_held_out_patients(tmp_path):
-    out = tmp_path / "idx"
-    subprocess.run(
-        [sys.executable, "scripts/build_rag_index.py", "--out", str(out)],
-        capture_output=True, text=True, timeout=900, check=True,
-    )
-    side = json.loads(
-        out.with_name(out.name + "_excluded_patients.json").read_text(encoding="utf-8"))
-    indexed = {c["patient_id"] for c in RAGIndex().load(str(out))._training_cases}
-    assert indexed.isdisjoint(set(side["excluded_patients"]))
-    assert side["source_split"] == "train"
-    assert side["runtime_queryable"] is True
-
-
-@real_only
-@pytest.mark.integration
-def test_default_spec_is_runtime_queryable(tmp_path):
-    """The default index must be in the space the live pipeline can supply.
-
-    The metadata preprocessor emits 116 columns at runtime but 114 when fitted
-    on train only, so a metadata-bearing index is not queryable in production.
-    """
-    out = tmp_path / "idx"
-    subprocess.run(
-        [sys.executable, "scripts/build_rag_index.py", "--out", str(out)],
-        capture_output=True, text=True, timeout=900, check=True,
-    )
-    idx = RAGIndex().load(str(out))
-    assert "metadata_embedding" not in idx.embedding_spec
-    assert idx.total_dim == 2048 + 768

@@ -91,6 +91,12 @@ CFG = dict(
     EARLY_STOP_PATIENCE=8,       # on val macro-F1, NOT loss
 )
 
+# When this whole file is pasted into a notebook cell, `__name__ == "__main__"`
+# and the last line would start a full training run every time the cell runs.
+# Set AUTORUN = False to only DEFINE everything, then call run_seeds(...) or
+# run_dermlip(...) from the next cell.
+AUTORUN = True
+
 CLASS_NAMES = ["BCC", "ACK", "NEV", "SEK", "SCC", "MEL"]
 CLASS_TO_IDX = {c: i for i, c in enumerate(CLASS_NAMES)}
 K = len(CLASS_NAMES)
@@ -422,7 +428,10 @@ class DermDataset(Dataset):
         lab_col = "diagnostic" if "diagnostic" in self.df.columns else "label_idx"
         self.labels = self.df[lab_col].map(CLASS_TO_IDX).values.astype(np.int64)             if lab_col == "diagnostic" else self.df[lab_col].values.astype(np.int64)
         size = cfg["IMAGE_SIZE"]
-        norm = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        if str(cfg.get("IMAGE_BACKBONE", "")).startswith("dermlip"):
+            norm = T.Normalize(CLIP_MEAN, CLIP_STD)
+        else:
+            norm = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         self.tf = (T.Compose([T.RandomResizedCrop(size, scale=(0.7, 1.0)),
                               T.RandomHorizontalFlip(), T.RandomVerticalFlip(),
                               T.RandomRotation(20),
@@ -485,13 +494,45 @@ class DermDataset(Dataset):
 # =============================================================================
 # MODEL — evidential heads + Dempster-Shafer combination
 # =============================================================================
-class _DermLIPVisual(nn.Module):
-    """Vision tower of DermLIP_PanDerm, exposed as a plain feature extractor."""
+DERMLIP_REPOS = (
+    "redlessone/DermLIP_PanDerm-base-w-PubMed-256",   # PanDerm vision tower (preferred)
+    "redlessone/DermLIP_ViT-B-16",                    # standard ViT-B/16 (fallback)
+)
+#: CLIP normalisation. DermLIP towers were trained with these, not ImageNet's.
+CLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
+CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
 
-    def __init__(self, repo):
+
+class _DermLIPVisual(nn.Module):
+    """Vision tower of a DermLIP model, exposed as a plain feature extractor.
+
+    Tries each repo in DERMLIP_REPOS in turn and records which one loaded in
+    `self.repo`. If none loads it RAISES: an earlier version of this project
+    silently fell back to ImageNet weights when the gated repo was unreachable,
+    and reported the result as a dermatology-encoder result.
+    """
+
+    def __init__(self, repos=DERMLIP_REPOS):
         super().__init__()
-        import open_clip
-        self.clip, _, self.preprocess = open_clip.create_model_and_transforms(f"hf-hub:{repo}")
+        try:
+            import open_clip
+        except ImportError as e:
+            raise SystemExit("DermLIP needs open_clip: run  !pip -q install open_clip_torch") from e
+        errors = []
+        for repo in repos:
+            try:
+                self.clip, _, self.preprocess = open_clip.create_model_and_transforms(
+                    f"hf-hub:{repo}")
+                self.repo = repo
+                break
+            except Exception as e:  # gated, missing token, unknown architecture...
+                errors.append(f"{repo}: {type(e).__name__}: {str(e)[:200]}")
+        else:
+            raise SystemExit(
+                "Could not load any DermLIP model. Check that you accepted the terms on "
+                "BOTH Hugging Face model pages and that HF_TOKEN is set "
+                "(Kaggle: Add-ons -> Secrets). Errors:\n  " + "\n  ".join(errors))
+        print(f"[backbone] DermLIP vision tower loaded from {self.repo}")
         self.clip.eval()
 
     def forward(self, x):
@@ -530,10 +571,16 @@ def build_image_backbone(name):
         d = 768; m.classifier[2] = nn.Identity()
     elif name == "dermlip_panderm":
         # pip install open_clip_torch ; huggingface-cli login
-        m = _DermLIPVisual("redlessone/DermLIP_PanDerm-base-w-PubMed-256")
+        if os.environ.get("HF_TOKEN"):
+            try:
+                from huggingface_hub import login
+                login(token=os.environ["HF_TOKEN"], add_to_git_credential=False)
+            except Exception as e:
+                print(f"[backbone] HF login warning: {e}")
+        m = _DermLIPVisual()
         with torch.no_grad():
             d = m(torch.zeros(1, 3, 224, 224)).shape[-1]
-        print(f"[backbone] DermLIP_PanDerm loaded, feature dim {d}")
+        print(f"[backbone] DermLIP feature dim {d} ({m.repo})")
     else:
         raise ValueError(f"unknown IMAGE_BACKBONE {name!r}")
     return m, d
@@ -1069,5 +1116,39 @@ def apply_env_overrides(cfg):
     return cfg
 
 
-if __name__ == "__main__":
+def run_seeds(seeds=(7, 2026), data_dir=None, **overrides):
+    """Train one model per seed, each into its own OUT_DIR. Notebook-friendly.
+
+        run_seeds((7, 2026), data_dir="/kaggle/input/datasets/<user>/milk10k")
+    """
+    out = {}
+    for seed in seeds:
+        cfg = dict(CFG)
+        cfg.update(SEED=seed, OUT_DIR=f"/kaggle/working/dguard_milk_s{seed}")
+        if data_dir:
+            cfg["DATA_DIR"] = data_dir
+        cfg.update(overrides)
+        print(f"\n{'=' * 70}\nSEED {seed} -> {cfg['OUT_DIR']}\n{'=' * 70}")
+        out[seed] = run(cfg)
+    return out
+
+
+def run_dermlip(seed=42, data_dir=None, linear_probe=True, **overrides):
+    """Train with the DermLIP image encoder. Needs HF_TOKEN and open_clip_torch.
+
+    linear_probe=True keeps the encoder frozen for every epoch (the DermLIP
+    licence is No-Derivatives, so fine-tuning the weights is the riskier reading).
+    """
+    cfg = dict(CFG)
+    cfg.update(SEED=seed, IMAGE_BACKBONE="dermlip_panderm",
+               OUT_DIR=f"/kaggle/working/dguard_milk_dermlip_s{seed}")
+    if linear_probe:
+        cfg["WARMUP_FROZEN_EPOCHS"] = cfg["EPOCHS"]
+    if data_dir:
+        cfg["DATA_DIR"] = data_dir
+    cfg.update(overrides)
+    return run(cfg)
+
+
+if __name__ == "__main__" and AUTORUN:
     run(apply_env_overrides(CFG))

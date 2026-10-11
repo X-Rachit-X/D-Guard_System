@@ -1,70 +1,26 @@
 """
-src/constants.py — Canonical vocabulary for DERMA-GUARD v4.0.
+src/constants.py - Canonical vocabulary for D-GUARD.
 
-Single source of truth for class labels and modality ordering. Every module that
-builds a mask, a weight vector, or a logit tensor imports the ordering from here,
-so the 4-wide evidence mask and the 4-wide fusion weight vector can never drift
-apart again (see docs/evaluation_integrity.md, "dead fusion path").
+Single source of truth for class labels, malignancy, and modality widths.
+Dataset: MILK10k (ISIC, DOI 10.34970/648456) - 11 classes, every lesion with a
+clinical photo AND a dermoscopy image. This is the only dataset the final system
+uses. (PAD-UFES-20 belonged to the earlier prototype; see docs/history/.)
 """
 from __future__ import annotations
 
 from typing import Dict, List
 
-# ---------------------------------------------------------------------------
-# Diagnostic classes — PAD-UFES-20 (6 classes)
-# ---------------------------------------------------------------------------
-# Ordering matches the trained checkpoints in Dummy/Project/saved_models.
-# Do NOT reorder: the classifier heads are trained against these indices.
-CLASS_NAMES: List[str] = ["BCC", "ACK", "NEV", "SEK", "SCC", "MEL"]
-NUM_CLASSES: int = len(CLASS_NAMES)
-
-#: label -> index, derived from CLASS_NAMES so the two can never disagree.
-#: Anything that turns a diagnosis string into an integer MUST use this. A
-#: separately-written map in src/data/preprocessing.py had SCC<->ACK and
-#: NEV<->MEL transposed relative to the trained heads.
-CLASS_TO_INDEX: Dict[str, int] = {name: i for i, name in enumerate(CLASS_NAMES)}
-
-CLASS_FULL_NAMES: Dict[str, str] = {
-    "BCC": "Basal Cell Carcinoma",
-    "ACK": "Actinic Keratosis",
-    "NEV": "Nevus",
-    "SEK": "Seborrheic Keratosis",
-    "SCC": "Squamous Cell Carcinoma",
-    "MEL": "Melanoma",
-}
-
-# Classes that are malignant — used by the safety layer to bias toward escalation.
-MALIGNANT_CLASSES: List[str] = ["BCC", "SCC", "MEL"]
-
-# ---------------------------------------------------------------------------
-# Modalities
-# ---------------------------------------------------------------------------
-# The evidence layer, the fusion layer and the acquisition policy all index
-# vectors in THIS order. Length-4 everywhere.
+# Input modalities the evidential model understands, in fold order.
 MODALITIES: List[str] = ["clinical_image", "dermoscopy_image", "metadata", "text"]
-NUM_MODALITIES: int = len(MODALITIES)
 
-# Embedding width each modality contributes to fusion, pre-projection.
-# clinical/dermoscopy: 256-d from the trained image projector
-# metadata:            116-d from the fitted MetadataPreprocessor
-# text:                256-d from the trained text projector
+# Default embedding widths for the retrieval index (src/retrieval/rag_index.py).
+# The final MILK10k index uses its own 256-d spec (src/agents/librarian.py).
 MODALITY_DIMS: Dict[str, int] = {
     "clinical_image": 256,
     "dermoscopy_image": 256,
     "metadata": 116,
     "text": 256,
 }
-
-# PAD-UFES-20 is a smartphone-photograph dataset: it carries no dermoscopy images
-# at all. The slot is kept so the masking and acquisition paths are exercised
-# (and so a dermoscopy-bearing dataset can be dropped in), but it is always
-# masked off for PAD-UFES cases.
-ALWAYS_UNAVAILABLE: List[str] = ["dermoscopy_image"]
-
-
-def modality_index(name: str) -> int:
-    """Return the canonical index of a modality name."""
-    return MODALITIES.index(name)
 
 
 # ---------------------------------------------------------------------------

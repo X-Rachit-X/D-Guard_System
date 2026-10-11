@@ -1,12 +1,16 @@
-"""src/agents/__init__.py — Agent package for DERMA-GUARD v4.0."""
-from src.agents.orchestrator import OrchestratorAgent, PatientCase, PipelineResult
-from src.agents.vision_team import VisionSpecialistTeam
-from src.agents.scribe import ScribeAgent
-from src.agents.librarian import LibrarianAgent
-from src.agents.devils_advocate import DevilsAdvocateAgent, EvidenceProfile
+"""src/agents - the D-GUARD agent pipeline.
 
-__all__ = [
-    "OrchestratorAgent", "PatientCase", "PipelineResult",
-    "VisionSpecialistTeam", "ScribeAgent", "LibrarianAgent",
-    "DevilsAdvocateAgent", "EvidenceProfile",
-]
+    quality.py    ImageQualityAgent  - checks each photo before it is trusted
+    librarian.py  MilkLibrarian      - similar confirmed training cases (explanation only)
+    report.py     ReportAgent        - structured report; optional LLM rewrite, verified
+    pipeline.py   DGuardPipeline     - quality -> engine -> librarian -> report
+
+Only the engine (src/native) decides; the agents explain, warn and write.
+"""
+from src.agents.librarian import MilkLibrarian
+from src.agents.pipeline import DGuardPipeline
+from src.agents.quality import ImageQualityAgent, QualityReport
+from src.agents.report import ReportAgent
+
+__all__ = ["DGuardPipeline", "ImageQualityAgent", "QualityReport", "MilkLibrarian",
+           "ReportAgent"]
