@@ -50,6 +50,37 @@ ACQUIRE** — a contradiction between existing sources is not resolved by collec
 
 ---
 
+## 1a. Native mode and the care platform (2026-10-11)
+
+```
+                       ┌────────────────────────────────────────────────┐
+  app/dguard_app.py ──►│ src/care/service.py   CareService               │
+  (patient | doctor |  │   intake → assess → route → review → follow-up  │
+   system views)       │   src/care/store.py   SQLite + audit log        │
+                       └───────────────────────┬────────────────────────┘
+                                               │ assess(photo, dermoscopy, details)
+                       ┌───────────────────────┴────────────────────────┐
+                       │ src/native/engine.py  NativeEngine              │
+                       │   trained MILK10k model (runs/…/best.pt)        │
+                       │   per-source opinions → DS fold (max conflict)  │
+                       │   dynamic fusion weights w_m = (1-u_m)/Σ        │
+                       │   calibration bundle: binary conformal sets,    │
+                       │   LTT λ̂, conflict p90, acquisition-value model  │
+                       └───────────────────────┬────────────────────────┘
+                                               │
+                       ┌───────────────────────┴────────────────────────┐
+                       │ src/decision/policy.py  ThreeActionPolicy       │
+                       │ src/decision/explain.py patient / doctor text   │
+                       └────────────────────────────────────────────────┘
+```
+
+Case states: `NEW → AWAITING_PATIENT (ACQUIRE) | AWAITING_DOCTOR (DEFER) | ASSESSED
+(PROCEED) → FOLLOW_UP → CLOSED`. A follow-up photo whose P(malignant) rises by 0.15 or more,
+or whose tentative diagnosis turns malignant, sends the case back to the doctor as URGENT.
+
+The engine's action is never overridden by the platform; only a doctor's recorded verdict
+turns a DEFER into a diagnosis.
+
 ## 2. Platform
 
 Modular monolith plus one background worker. No microservices, no Kafka, no Kubernetes.

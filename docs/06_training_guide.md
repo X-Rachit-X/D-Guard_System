@@ -281,7 +281,26 @@ then should fall as the model becomes confident. If `u` stays near 1.0 at the en
 
 ---
 
-## 10. After the model returns
+## 9a. The first run (seed 42) — what came back and what changed
+
+The seed-42 MILK10k run is in `runs/milk10k_resnet50_seed42/` and is fully used: see
+[14_results.md](14_results.md). Two things changed in the trainer afterwards — **upload the
+current `notebooks/kaggle_train_dguard.py` before the next run**:
+
+1. **Conflict export fixed.** The old copy exported only the last pairwise conflict, which
+   on MILK10k is always 0. Weights were unaffected (conflict is not in the loss).
+2. **`DGUARD_<KEY>` environment overrides** for CPU smoke tests.
+
+After a run comes back:
+
+```bash
+# put the OUT_DIR at runs/<name>/, then
+python scripts/milk_native_infer.py --run runs/<name> --out outputs/milk_native_<name>
+python scripts/run_eade_milk.py --native outputs/milk_native_<name> --missed-cost 5 \
+       --out outputs/eade_milk/<name>_cost_5
+```
+
+## 10. After the model returns (legacy PAD-UFES pipeline)
 
 ```bash
 # conformal sets + LTT threshold with a distribution-free risk guarantee,

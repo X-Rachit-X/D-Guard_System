@@ -25,10 +25,10 @@ What is built, what is verified, and how to reproduce it. Updated 2026-10-11.
 | **RAG similar-case retrieval** | `src/retrieval/rag_index.py`, `scripts/build_rag_index.py` | **39** | 1,403 training cases indexed; **no calibration/test patient present**, asserted by `--verify`; spec mismatch raises instead of searching the wrong space |
 | **7-agent pipeline** | `src/agents/` | 21 | specialists, scribe, librarian, devil's advocate, EADE, report, stage-2 verifier — all reached on a real case |
 
-**Total: 442 tests passing.**
+**Total at that stage: 442 tests passing** (now 473 — see §2b).
 
 ```bash
-pytest tests -q                        # 442 passed, 3 skipped
+pytest tests -q                        # 470 passed, 3 skipped
 pytest tests -q -m "not integration"   # skip the ones needing real weights
 ```
 
@@ -110,19 +110,39 @@ and 11 class probabilities, which is exactly what the decision engine consumes.
 
 ---
 
+## 2b. Native mode on MILK10k — trained and running (2026-10-11)
+
+The first Kaggle run came back and is wired into everything.
+
+| Component | Module | Tests | Verification |
+|---|---|---|---|
+| Native inference of the trained model | `scripts/milk_native_infer.py` | — | rebuilds the exact Kaggle split; strict weight load; test macro-F1 **0.3758 local vs 0.3794 Kaggle** |
+| Conflict recomputed correctly | same | — | non-zero on 787/787 test lesions (the Kaggle export was 0 everywhere — [what_did_not_work.md](what_did_not_work.md) §16) |
+| Two-stage decision experiment | `scripts/run_eade_milk.py` | — | 6 baselines, cost sweep, acquisition efficiency, AUGRC — [14_results.md](14_results.md) |
+| Benign/malignant conformal sets (LAC, Mondrian) | `src/calibration/binary.py` | via experiment | replaces the 11-class set in the gate |
+| `label_rule`, `ambiguity_gate` policy options | `src/decision/policy.py` | 31 + 10 | old behaviour kept as an option |
+| Tentative opinion on every decision | `src/decision/policy.py`, `explain.py` | 10 | DEFER still states a best guess, differential, P(malignant), urgency |
+| Single-case engine | `src/native/engine.py` | — | matches batch inference to 1e-7 |
+| Care platform | `src/care/` | 18 | patients, doctor queue, questions, follow-ups, change check, audit |
+| Web app | `app/dguard_app.py` | headless | all three views run with zero exceptions |
+| Terminal demo | `scripts/demo_care.py` | — | PROCEED, ACQUIRE→PROCEED, DEFER→review→follow-up on real held-out lesions |
+
+**Total: 473 tests (470 passed, 3 skipped).**
+
+---
+
 ## 3. Not yet done
 
 | Item | Blocker | Where |
 |---|---|---|
-| **MILK10k GPU training** | **needs a GPU — this is the one remaining blocker** | [06](06_training_guide.md) §3 |
-| Native evidential heads | needs GPU (same run) | [06](06_training_guide.md) §3 |
-| DermLIP_PanDerm encoder | needs HF token; licence check | [06](06_training_guide.md) §4 |
-| Acquisition-value estimator `h_m` | needs the trained heads (data is in hand) | [04](04_methods.md) §4 |
-| Baselines B4, B6–B9 | after native training | [05](05_experimental_protocol.md) §3 |
-| Group-conditional fairness results | needs the trained heads (skin tone is in hand) | [04](04_methods.md) §5 |
-| Guarantee-violation under shift | needs both datasets trained | [05](05_experimental_protocol.md) §7 |
-| Rebuild the RAG index on MILK10k | after training (current index is PAD-UFES-20) | [10](10_retrieval.md) §7 |
-| Persist the train-fitted metadata preprocessor | would make the stronger 2930-d index runtime-queryable (agreement 0.875 vs 0.500) | [10](10_retrieval.md) §2 |
+| Seeds 7 and 2026 | GPU time | [09](09_what_you_need_to_do.md) ① |
+| DermLIP_PanDerm encoder | GPU + HF token | [09](09_what_you_need_to_do.md) ② |
+| PAD-UFES-20 run of the new trainer (shift) | GPU time | [09](09_what_you_need_to_do.md) ⑥ |
+| Baselines B4, B6–B9 (MetaBlock etc.) | after more training | [05](05_experimental_protocol.md) §3 |
+| Group-conditional fairness results | code ready; needs reporting per skin tone | [04](04_methods.md) §5 |
+| Guarantee violation under shift | needs the PAD-UFES run | [05](05_experimental_protocol.md) §7 |
+| Rebuild the RAG index on MILK10k | optional | [10](10_retrieval.md) §7 |
+| Persist the train-fitted metadata preprocessor for RAG | optional | [10](10_retrieval.md) §2 |
 
 ---
 

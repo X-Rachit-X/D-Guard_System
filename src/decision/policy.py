@@ -131,6 +131,23 @@ class Decision:
     ignorance: Optional[float] = None
     conflict: Optional[float] = None
     prediction_set: Optional[List[int]] = None
+    # ---- tentative opinion ------------------------------------------------
+    # Present on EVERY decision, including DEFER and ACQUIRE. Deferring means
+    # "do not issue an autonomous diagnosis", not "say nothing": a reviewing
+    # clinician is better served by the system's best guess, its differential
+    # and its malignancy estimate - clearly marked UNCONFIRMED - than by
+    # silence. `prediction` stays None unless the action is PROCEED, so no
+    # caller can mistake a tentative opinion for an issued one.
+    tentative: Optional[int] = None
+    tentative_confidence: Optional[float] = None
+    differential: List[Tuple[int, float]] = field(default_factory=list)
+    p_malignant: Optional[float] = None
+    urgency: Optional[str] = None          # "URGENT" | "ROUTINE"
+
+    @property
+    def is_autonomous(self) -> bool:
+        """True only when the system is allowed to state a diagnosis itself."""
+        return self.action == Action.PROCEED
 
     def to_dict(self) -> Dict:
         return {
@@ -142,6 +159,12 @@ class Decision:
             "risks": self.risks, "gates": self.gates,
             "confidence": self.confidence, "ignorance": self.ignorance,
             "conflict": self.conflict, "prediction_set": self.prediction_set,
+            "tentative": self.tentative,
+            "tentative_confidence": self.tentative_confidence,
+            "differential": [[int(c), float(q)] for c, q in self.differential],
+            "p_malignant": self.p_malignant,
+            "urgency": self.urgency,
+            "autonomous": self.is_autonomous,
         }
 
 
@@ -160,6 +183,36 @@ class ThreeActionPolicy:
     num_classes: int = 6
     lambda_hat: Optional[float] = None
     conflict_threshold: float = 0.5
+    #: Triage flag for the HUMAN REVIEW QUEUE only - it orders deferred cases,
+    #: it never changes an action. A deferred case is URGENT when the
+    #: probability of malignancy reaches this level or a malignant class is
+    #: still inside the conformal prediction set. Declared, not calibrated.
+    urgent_malignancy_threshold: float = 0.30
+    differential_size: int = 3
+    #: How the stated label is chosen.
+    #:   "bayes"  the label with the lowest expected cost (Chow's rule). With an
+    #:            asymmetric cost matrix this SHIFTS the stated diagnosis toward
+    #:            malignant classes: on MILK10k (73.6% malignant, miss:false-alarm
+    #:            10:2) it calls 98.5% of lesions malignant, so "never misses a
+    #:            cancer" becomes true for a trivial reason.
+    #:   "argmax" the most probable diagnosis is what gets stated; the cost
+    #:            matrix then decides only WHETHER the system may state it alone,
+    #:            via the PROCEED-vs-DEFER comparison and the safety gates. This
+    #:            keeps the diagnosis honest and puts the caution where it belongs.
+    label_rule: str = "bayes"
+    #: Which ambiguous prediction sets block PROCEED.
+    #:   "symmetric"    any set holding both a benign and a malignant class, or
+    #:                  an empty set. Blocks "likely cancer" as hard as "likely
+    #:                  harmless" - with a weak model that defers nearly
+    #:                  everything (measured: 100% on MILK10k).
+    #:   "reassurance"  block only when the system would state a BENIGN label
+    #:                  while a malignant class is still in the set (or the set
+    #:                  is empty). The gate exists to stop false reassurance;
+    #:                  stating a malignant diagnosis while benign is still
+    #:                  possible errs in the safe direction - the patient is
+    #:                  sent onward either way - and its false-alarm cost is
+    #:                  already priced by the cost matrix.
+    ambiguity_gate: str = "symmetric"
     max_acquisitions: int = 1
     version: str = "eade-v3.0"
 
@@ -195,14 +248,21 @@ class ThreeActionPolicy:
         if p.size != self.num_classes:
             raise ValueError(f"probs has {p.size} entries, expected {self.num_classes}")
         if p.sum() <= 0:
-            return Decision(action=Action.DEFER, reason=DeferReason.NO_EVIDENCE)
+            return Decision(action=Action.DEFER, reason=DeferReason.NO_EVIDENCE,
+                            urgency="ROUTINE")
         p = p / p.sum()
 
         if confidence is None:
             confidence = (1.0 - float(ignorance)) if ignorance is not None else float(p.max())
 
-        r_proceed, pred = expected_loss(p[None, :], self._L)
-        r_proceed, pred = float(r_proceed[0]), int(pred[0])
+        label_risks = p @ self._L          # expected cost of stating each label
+        if self.label_rule == "argmax":
+            pred = int(np.argmax(p))
+        elif self.label_rule == "bayes":
+            pred = int(np.argmin(label_risks))
+        else:
+            raise ValueError(f"label_rule must be 'bayes' or 'argmax', got {self.label_rule!r}")
+        r_proceed = float(label_risks[pred])
 
         # --- acquisition option -------------------------------------------
         r_acquire, best_m = np.inf, None
@@ -228,17 +288,34 @@ class ThreeActionPolicy:
             mal = set(self.malignant_classes)
             has_mal = any(i in mal for i in pset)
             has_ben = any(i not in mal for i in pset)
-            gate_ambiguous = (has_mal and has_ben) or len(pset) == 0
+            if self.ambiguity_gate == "reassurance":
+                states_benign = pred not in mal
+                gate_ambiguous = (states_benign and has_mal) or len(pset) == 0
+            elif self.ambiguity_gate == "symmetric":
+                gate_ambiguous = (has_mal and has_ben) or len(pset) == 0
+            else:
+                raise ValueError(f"ambiguity_gate must be 'symmetric' or "
+                                 f"'reassurance', got {self.ambiguity_gate!r}")
         gate_risk = self.lambda_hat is not None and confidence < self.lambda_hat
 
         gates = {"conflict": gate_conflict, "ambiguous_set": gate_ambiguous,
                  "below_risk_threshold": gate_risk}
         blocked = gate_conflict or gate_ambiguous or gate_risk
 
+        mal_idx = [i for i in self.malignant_classes if i < p.size]
+        p_mal = float(p[mal_idx].sum()) if mal_idx else 0.0
+        order = np.argsort(-p)[: self.differential_size]
+        mal_in_set = pset is not None and any(i in set(mal_idx) for i in pset)
+        urgency = ("URGENT" if (p_mal >= self.urgent_malignancy_threshold or mal_in_set)
+                   else "ROUTINE")
+
         common = dict(risks=risks, gates=gates, confidence=float(confidence),
                       ignorance=None if ignorance is None else float(ignorance),
                       conflict=None if conflict is None else float(conflict),
-                      prediction_set=pset)
+                      prediction_set=pset,
+                      tentative=pred, tentative_confidence=float(p[pred]),
+                      differential=[(int(i), float(p[i])) for i in order],
+                      p_malignant=p_mal, urgency=urgency)
 
         # Conflict is never resolved by collecting more evidence - a
         # contradiction needs a human. It therefore short-circuits ACQUIRE.

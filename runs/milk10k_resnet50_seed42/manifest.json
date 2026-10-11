@@ -1,0 +1,70 @@
+{
+  "created": "2026-10-11T11:46:05",
+  "config": {
+    "DATASET": "milk10k",
+    "DATA_DIR": "/kaggle/input/datasets/minchou01/milk10k",
+    "IMAGES_SUBDIR": "images",
+    "METADATA_CSV": "metadata.csv",
+    "TEXTS_CSV": "generated_clinical_texts.csv",
+    "OUT_DIR": "/kaggle/working/dguard_out",
+    "IMAGE_BACKBONE": "resnet50",
+    "IMAGE_SIZE": 224,
+    "EMBED_DIM": 256,
+    "TEXT_MODEL": "emilyalsentzer/Bio_ClinicalBERT",
+    "TEXT_MAX_LEN": 128,
+    "FREEZE_TEXT": true,
+    "EPOCHS": 25,
+    "BATCH_SIZE": 32,
+    "LR_HEAD": 0.001,
+    "LR_BACKBONE": 0.0001,
+    "WEIGHT_DECAY": 0.0001,
+    "WARMUP_FROZEN_EPOCHS": 3,
+    "GRAD_CLIP": 1.0,
+    "MODALITY_DROPOUT": 0.25,
+    "EDL_ANNEAL_EPOCHS": 10,
+    "LABEL_SMOOTH": 0.0,
+    "SEED": 42,
+    "SPLIT": [
+      0.7,
+      0.15,
+      0.15
+    ],
+    "NUM_WORKERS": 2,
+    "AMP": true,
+    "EARLY_STOP_PATIENCE": 8
+  },
+  "best_epoch": 23,
+  "best_val_macro_f1": 0.39816841878699305,
+  "meta_dim": 31,
+  "class_names": [
+    "AKIEC",
+    "BCC",
+    "BEN_OTH",
+    "BKL",
+    "DF",
+    "INF",
+    "MAL_OTH",
+    "MEL",
+    "NV",
+    "SCCKA",
+    "VASC"
+  ],
+  "n": {
+    "train": 3667,
+    "val": 786,
+    "test": 787
+  },
+  "groups": {
+    "train": 3667,
+    "val": 786,
+    "test": 787
+  },
+  "group_key": "lesion_id",
+  "versions": {
+    "python": "3.13.15",
+    "torch": "2.11.0+cu128",
+    "numpy": "2.1.3",
+    "pandas": "2.3.3"
+  },
+  "notes": "Patient-level disjoint splits. Metrics as measured; no clipping, no target-matching, no prediction rewriting."
+}

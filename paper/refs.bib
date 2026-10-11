@@ -1,0 +1,212 @@
+% refs.bib - D-GUARD paper.
+% Entries marked "verified" were checked against primary sources on 2026-10-11
+% (see docs/07_literature.md). The rest are standard references; re-check page
+% numbers against the publisher before camera-ready.
+
+% ---------------------------------------------------------------- uncertainty
+@inproceedings{sensoy2018edl,
+  author    = {Murat Sensoy and Lance Kaplan and Melih Kandemir},
+  title     = {Evidential Deep Learning to Quantify Classification Uncertainty},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  pages     = {3179--3189},
+  year      = {2018},
+  note      = {arXiv:1806.01768}
+} % verified
+
+@inproceedings{han2021tmc,
+  author    = {Zongbo Han and Changqing Zhang and Huazhu Fu and Joey Tianyi Zhou},
+  title     = {Trusted Multi-View Classification},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021},
+  note      = {arXiv:2102.02051}
+} % verified
+
+@article{dempster1967,
+  author  = {Arthur P. Dempster},
+  title   = {Upper and Lower Probabilities Induced by a Multivalued Mapping},
+  journal = {The Annals of Mathematical Statistics},
+  volume  = {38},
+  number  = {2},
+  pages   = {325--339},
+  year    = {1967}
+}
+
+@book{shafer1976,
+  author    = {Glenn Shafer},
+  title     = {A Mathematical Theory of Evidence},
+  publisher = {Princeton University Press},
+  year      = {1976}
+}
+
+@book{josang2016,
+  author    = {Audun J{\o}sang},
+  title     = {Subjective Logic: A Formalism for Reasoning Under Uncertainty},
+  publisher = {Springer},
+  year      = {2016}
+}
+
+% ------------------------------------------------------------ conformal / risk
+@book{vovk2005,
+  author    = {Vladimir Vovk and Alexander Gammerman and Glenn Shafer},
+  title     = {Algorithmic Learning in a Random World},
+  publisher = {Springer},
+  year      = {2005}
+}
+
+@article{angelopoulos2021gentle,
+  author  = {Anastasios N. Angelopoulos and Stephen Bates},
+  title   = {A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification},
+  journal = {arXiv preprint arXiv:2107.07511},
+  year    = {2021}
+} % verified
+
+@article{sadinle2019lac,
+  author  = {Mauricio Sadinle and Jing Lei and Larry Wasserman},
+  title   = {Least Ambiguous Set-Valued Classifiers With Bounded Error Levels},
+  journal = {Journal of the American Statistical Association},
+  volume  = {114},
+  number  = {525},
+  pages   = {223--234},
+  year    = {2019}
+}
+
+@inproceedings{romano2020aps,
+  author    = {Yaniv Romano and Matteo Sesia and Emmanuel J. Cand{\`e}s},
+  title     = {Classification with Valid and Adaptive Coverage},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2020}
+}
+
+@article{angelopoulos2025ltt,
+  author  = {Anastasios N. Angelopoulos and Stephen Bates and Emmanuel J. Cand{\`e}s and Michael I. Jordan and Lihua Lei},
+  title   = {Learn Then Test: Calibrating Predictive Algorithms to Achieve Risk Control},
+  journal = {The Annals of Applied Statistics},
+  year    = {2025},
+  doi     = {10.1214/24-AOAS1998},
+  note    = {arXiv:2110.01052}
+} % verified
+
+@article{angelopoulos2022crc,
+  author  = {Anastasios N. Angelopoulos and Stephen Bates and Adam Fisch and Lihua Lei and Tal Schuster},
+  title   = {Conformal Risk Control},
+  journal = {arXiv preprint arXiv:2208.02814},
+  year    = {2022}
+} % verified
+
+@inproceedings{lu2022fair,
+  author    = {Charles Lu and Andr{\'e}anne Lemay and Ken Chang and Katharina H{\"o}bel and Jayashree Kalpathy-Cramer},
+  title     = {Fair Conformal Predictors for Applications in Medical Imaging},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  year      = {2022},
+  note      = {arXiv:2109.04392}
+}
+
+% ------------------------------------------------- selective prediction / defer
+@article{chow1970,
+  author  = {C. K. Chow},
+  title   = {On Optimum Recognition Error and Reject Tradeoff},
+  journal = {IEEE Transactions on Information Theory},
+  volume  = {16},
+  number  = {1},
+  pages   = {41--46},
+  year    = {1970}
+}
+
+@inproceedings{geifman2017selective,
+  author    = {Yonatan Geifman and Ran El-Yaniv},
+  title     = {Selective Classification for Deep Neural Networks},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2017}
+}
+
+@inproceedings{mozannar2020defer,
+  author    = {Hussein Mozannar and David Sontag},
+  title     = {Consistent Estimators for Learning to Defer to an Expert},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2020}
+}
+
+@inproceedings{traub2024augrc,
+  author    = {Jeremias Traub and Till J. Bungert and Carsten T. L{\"u}th and Michael Baumgartner and Klaus H. Maier-Hein and Lena Maier-Hein and Paul F. J{\"a}ger},
+  title     = {Overcoming Common Flaws in the Evaluation of Selective Classification Systems},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2024},
+  note      = {Spotlight. arXiv:2407.01032}
+} % verified
+
+% --------------------------------------------------------------- dermatology
+@article{esteva2017,
+  author  = {Andre Esteva and Brett Kuprel and Roberto A. Novoa and Justin Ko and Susan M. Swetter and Helen M. Blau and Sebastian Thrun},
+  title   = {Dermatologist-Level Classification of Skin Cancer with Deep Neural Networks},
+  journal = {Nature},
+  volume  = {542},
+  pages   = {115--118},
+  year    = {2017}
+}
+
+@article{pacheco2020padufes,
+  author  = {Andre G. C. Pacheco and others},
+  title   = {{PAD-UFES-20}: A Skin Lesion Dataset Composed of Patient Data and Clinical Images Collected from Smartphones},
+  journal = {Data in Brief},
+  volume  = {32},
+  pages   = {106221},
+  year    = {2020},
+  doi     = {10.1016/j.dib.2020.106221}
+} % verified
+
+@article{pacheco2021metablock,
+  author  = {Andre G. C. Pacheco and Renato A. Krohling},
+  title   = {An Attention-Based Mechanism to Combine Images and Metadata in Deep Learning Models Applied to Skin Cancer Classification},
+  journal = {IEEE Journal of Biomedical and Health Informatics},
+  volume  = {25},
+  number  = {9},
+  pages   = {3554--3563},
+  year    = {2021}
+} % verified
+
+@article{kawahara2019derm7pt,
+  author  = {Jeremy Kawahara and Sara Daneshvar and Giuseppe Argenziano and Ghassan Hamarneh},
+  title   = {Seven-Point Checklist and Skin Lesion Classification Using Multitask Multimodal Neural Nets},
+  journal = {IEEE Journal of Biomedical and Health Informatics},
+  volume  = {23},
+  number  = {2},
+  pages   = {538--546},
+  year    = {2019}
+}
+
+@misc{milk10k,
+  author       = {{MILK study team}},
+  title        = {{MILK10k}: Multimodal Imaging of Lesions with Knowledge},
+  howpublished = {International Skin Imaging Collaboration (ISIC) Archive},
+  doi          = {10.34970/648456},
+  note         = {CC-BY-NC},
+  year         = {2025}
+} % verified (DOI); check the official title string on the ISIC page
+
+@article{yan2025panderm,
+  author  = {Siyuan Yan and others},
+  title   = {A Multimodal Vision Foundation Model for Clinical Dermatology},
+  journal = {Nature Medicine},
+  year    = {2025},
+  note    = {arXiv:2410.15038}
+} % verified (venue); check exact title
+
+@article{mehta2025hotai,
+  author  = {Devansh Mehta and Clare Primiero and Brigid Betz-Stablein and Toan D. Nguyen and Yaniv Gal and Adrian Bowling and Martin Haskett and Maithili Sashindranath and Paul Bonnington and Victoria Mar and H. Peter Soyer and Zongyuan Ge},
+  title   = {Multi-Task {AI} Models in Dermatology},
+  journal = {Journal of the European Academy of Dermatology and Venereology},
+  volume  = {39},
+  number  = {12},
+  pages   = {2121--2133},
+  year    = {2025},
+  doi     = {10.1111/jdv.20551}
+} % verified (record)
+
+% -------------------------------------------------------------------- models
+@inproceedings{he2016resnet,
+  author    = {Kaiming He and Xiangyu Zhang and Shaoqing Ren and Jian Sun},
+  title     = {Deep Residual Learning for Image Recognition},
+  booktitle = {IEEE Conference on Computer Vision and Pattern Recognition (CVPR)},
+  pages     = {770--778},
+  year      = {2016}
+}

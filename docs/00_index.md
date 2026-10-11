@@ -1,95 +1,92 @@
 # Documentation Index
 
-**D-GUARD v3** — *Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral for
+**D-GUARD** — *Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral for
 Multimodal Dermatology AI*
 
-This set consolidates the v2.0 specification (MILK10k, three-action policy, Learn-then-Test,
-AUGRC, B1–B9 baselines) with the evidential-fusion mechanism, and restores the conformal
-guarantee that v1 had and the v4 spec discarded. It **supersedes** all earlier docs.
+A skin-lesion AI that decides, per patient, whether to **answer**, **ask for a dermoscopy
+photo**, or **hand the case to a doctor** — wrapped in a care platform where patients,
+doctors and follow-ups meet. Updated 2026-10-11.
 
 ---
 
-## Read in this order
+## If you have 10 minutes
 
-| # | Doc | Why |
+1. [README](../README.md) — what it is and the headline result
+2. [14_results.md](14_results.md) — the numbers
+3. Run `python scripts/demo_care.py`
+
+## If you are new to the project
+
+Follow **[15_study_plan.md](15_study_plan.md)** — a 10-day plan that tells you what to read,
+run and open each day. Concepts are taught in [11_learning_path.md](11_learning_path.md).
+
+## If you are presenting it
+
+**[13_panel_guide.md](13_panel_guide.md)** — slide plan, demo script, and answers to the
+questions a panel will ask.
+
+---
+
+## All documents, in reading order
+
+| # | Doc | What it covers |
 |---|---|---|
-| 0 | **[evaluation_integrity.md](evaluation_integrity.md)** | **Start here.** Why no pre-2026-10-11 number can be trusted, with the evidence |
-| 1 | [01_project_overview.md](01_project_overview.md) | What this is, four-generation lineage, honest reference numbers, status |
-| 2 | [02_research_design.md](02_research_design.md) | Question, gap, contributions A–D, hypotheses H1–H5, gap matrix, novelty position |
-| 3 | [03_architecture.md](03_architecture.md) | Decision path, platform, persistence, what was kept vs replaced |
-| 4 | [04_methods.md](04_methods.md) | Every quantity derived — EDL, DS, conformal, LTT, cost, AUGRC |
-| 5 | [05_experimental_protocol.md](05_experimental_protocol.md) | Datasets, splits, B1–B9, ablations, metrics, statistics, 12-week plan |
-| 6 | [06_training_guide.md](06_training_guide.md) | **GPU work — the code you run on Kaggle** |
-| 7 | [07_literature.md](07_literature.md) | Verified citations, comparable numbers, corrections, reading order |
-| 8 | [08_implementation_status.md](08_implementation_status.md) | What is built and verified; how to reproduce |
-| 9 | **[09_what_you_need_to_do.md](09_what_you_need_to_do.md)** | **Every task needing a human or a GPU, with commands** |
-| 10 | [10_retrieval.md](10_retrieval.md) | RAG design, the leakage guard, and the 7-agent pipeline |
+| 0 | **[evaluation_integrity.md](evaluation_integrity.md)** | Why no number from before 2026-10-11 can be trusted, with evidence |
+| 1 | [01_project_overview.md](01_project_overview.md) | The project and its history |
+| 11 | **[11_learning_path.md](11_learning_path.md)** | Every concept from zero, with diagrams, in plain English |
+| 12 | [12_system_walkthrough.md](12_system_walkthrough.md) | One case traced end to end through every stage |
+| 2 | [02_research_design.md](02_research_design.md) | Research question, contributions, hypotheses H1–H5, what is and is not novel |
+| 3 | [03_architecture.md](03_architecture.md) | Layers, components, what was kept from the old system |
+| 4 | [04_methods.md](04_methods.md) | Every formula, derived |
+| 5 | [05_experimental_protocol.md](05_experimental_protocol.md) | Datasets, splits, baselines, metrics, statistics |
+| 6 | [06_training_guide.md](06_training_guide.md) | Kaggle training, step by step |
+| 14 | **[14_results.md](14_results.md)** | **Results on MILK10k with the trained model** |
+| 7 | [07_literature.md](07_literature.md) | Verified citations and comparable numbers |
+| 10 | [10_retrieval.md](10_retrieval.md) | RAG and the agent pipeline |
+| 8 | [08_implementation_status.md](08_implementation_status.md) | What is built and verified |
+| 16 | [16_project_structure.md](16_project_structure.md) | Folders, what is in git, what the cleanup removed |
+| 9 | **[09_what_you_need_to_do.md](09_what_you_need_to_do.md)** | **What is trained, what is not, and every remaining task** |
+| 13 | [13_panel_guide.md](13_panel_guide.md) | Presenting and defending the project |
+| 15 | [15_study_plan.md](15_study_plan.md) | 10-day learning plan + glossary |
 
 ## Supporting
 
 | Doc | Contents |
 |---|---|
-| [prereg.yaml](prereg.yaml) | Pre-registration — commit before touching the test split |
+| [what_did_not_work.md](what_did_not_work.md) | 23 negative results and corrections — read this |
 | [limitations.md](limitations.md) | Known limitations |
-| [what_did_not_work.md](what_did_not_work.md) | Negative results, including the measured failure of the text modality |
-| [results/baseline_probe.json](results/baseline_probe.json) | Raw honest-baseline output, 3 seeds |
+| [prereg.yaml](prereg.yaml) | Pre-registration |
+| [results/](results/) | Raw baseline output (PAD-UFES-20) |
+| [specs_v2/](specs_v2/) | The v2 specification, literature survey and planning notes this project consolidates |
+| [../paper/main.tex](../paper/main.tex) | The IEEE paper (Overleaf-ready) |
 
 ---
 
 ## Quick answers
 
-**What is this?** A dermatology AI that decides whether to **answer now**, **ask for a
-dermoscopic image**, or **defer to a human** — with a statistical bound on how often it
-misses a malignancy when it answers. A safety project, not an accuracy project.
+**What is it?** A dermatology decision-support system with three actions — PROCEED,
+ACQUIRE (ask for dermoscopy), DEFER (to a doctor) — chosen per patient from calibrated
+evidence, plus a patient/doctor platform with instructions, questions and follow-ups.
 
-**What is the core proposal?** Per-modality Dirichlet evidence combined by
-Dempster–Shafer, so absent modalities vanish by algebra and *conflict* is separable from
-*ignorance*; feeding a cost-aware three-action rule whose threshold is calibrated by
-Learn-then-Test for `P(risk ≤ α) ≥ 1−δ`.
+**Is it trained?** Yes. An evidential model was trained on MILK10k on Kaggle (seed 42) and
+runs locally, matching the Kaggle result. Two more seeds and a stronger image encoder are
+still to run — [09](09_what_you_need_to_do.md).
 
-**Does it work?** The machinery does, verified: at matched coverage (0.433) the policy's
-malignancy miss rate is **0.0050 vs 0.0597** for max-softmax abstention. Conformal
-coverage 0.8944 against a 0.90 target. 442 tests pass. But those numbers run over legacy
-weights trained on overlapping data, so they are **not** generalisation estimates.
+**Does it work?** At the same coverage as standard confidence-based abstention, it misses
+**1.7%** of cancers instead of **5.2%**, at lower cost, and asks for dermoscopy for only
+**6%** of patients. It answers alone for about a third of patients; the rest get a
+tentative opinion and go to a doctor. [14](14_results.md).
 
-**Can I trust the old results?** No. The shipped training code evaluated on a test set
-that was 100% training data and rewrote predictions toward hardcoded targets. Doc 0.
+**Is fusion dynamic?** Yes — each source's weight is set per case by how much evidence it
+produced, shown in the app for every case. The old system's diagnosis-dependent trust is
+now measured from data instead of typed by hand. [14](14_results.md) §6.
 
-**Is the RAG / agentic part done?** Yes. The seven agents run end to end, and similar-case
-retrieval is built, wired in and leak-guarded — 1,403 training cases indexed, with every
-calibration and test patient excluded and that property asserted by `--verify`. It had
-been written and unit-tested but **never connected**: nothing built an index and
-`build()` never attached a Librarian, so it returned "index not loaded" on every real
-case. Doc 10.
+**When it defers, does it say anything?** Yes. Every DEFER carries a tentative diagnosis,
+a differential, a cancer probability and an urgency flag, labelled unconfirmed, with a
+strong instruction to see a doctor.
 
-**What needs a GPU?** Training the evidential heads and the image encoder — the only
-remaining blocker. The image pathway is encoder-limited: frozen ImageNet reaches only
-0.477 macro-F1 against 0.648 for metadata alone. The trainer is smoke-tested end to end on
-CPU against the real MILK10k images, so what ships to the GPU is known to run. Doc 6.
+**Can I trust the old results?** No — [evaluation_integrity.md](evaluation_integrity.md).
 
-**Why MILK10k and not PAD-UFES-20?** Every MILK10k lesion has **both** a clinical and a
-dermoscopic image, so "should I acquire dermoscopy?" is a real experiment with an oracle
-upper bound. PAD-UFES-20 has no dermoscopy at all. It stays as the distribution-shift set.
-
-**Is MILK10k in hand?** Yes — downloaded, audited and wired in on 2026-10-11. Verified on
-the real release: **11 classes** (not 6), **71.7% malignant**, 95.7% histopathology, zero
-duplicate images, and **no centre column**, which kills a centre-shift experiment we had
-documented three times. `python scripts/milk10k_audit.py` reproduces all of it. The one
-remaining blocker is GPU time — Doc 6.
-
-**What is genuinely novel?** The integration and the benchmark — not the individual
-techniques. Evidential deep learning, Dempster–Shafer, conformal prediction,
-Learn-then-Test, learning to defer and recommending dermoscopy all have prior art.
-Doc 2 §7 is explicit, and names the prohibited claims.
-
-**What happens if the main hypothesis fails?** The paper centres on DERMA-STRESS and the
-guarantee-violation analysis. That is a legitimate contribution and needs no change to
-the rest of the protocol.
-
----
-
-## Deleted in this consolidation
-
-The v4 specification (`proj.md`, `det.md`, `detail.md`), the v1 context document, and the
-nine superseded doc files — all recoverable from git history. They described models and
-datasets that were never built here; where they conflicted with this set, this set wins.
+**What is novel?** The combination into one calibrated three-action rule and the
+measured value of acquiring dermoscopy on paired data — not the individual techniques.
+[02](02_research_design.md).

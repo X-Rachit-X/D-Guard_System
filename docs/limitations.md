@@ -82,6 +82,23 @@ separates. Bridge numbers must be labelled and never presented as native results
 of DS conflict mass. That it fires on genuine contradictions rather than merely on hard
 cases is an assumption still to be tested (H5).
 
+**Native results rest on one seed and one encoder.** The MILK10k numbers in
+[14_results.md](14_results.md) come from a single ResNet50 run (seed 42). Seeds 7 and 2026
+are required before they are final, and validation was used both to pick the epoch and to
+calibrate the policy.
+
+**The system answers alone for only about a third of patients.** At the balanced cost
+(missed cancer = 5) it defers 63%. Every deferred patient gets a tentative opinion and a
+place in the doctor queue, but the deferral rate is set by the classifier's quality and is
+the main practical limitation.
+
+**At the pre-registered cost the system cannot reassure anyone.** With a missed cancer
+priced at 10, every answer it gives is a cancer diagnosis. See
+[what_did_not_work.md](what_did_not_work.md) §20.
+
+**MONET concept scores are unavailable for new uploads.** They come from an external model
+run on the image; for a user's own photo the engine substitutes the training median.
+
 ## 3. Scope
 
 - No prospective or clinical validation; no clinical-utility claim.

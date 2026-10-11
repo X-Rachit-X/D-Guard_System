@@ -1,0 +1,505 @@
+% =============================================================================
+% D-GUARD: Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral
+%          for Multimodal Dermatology AI
+%
+% IEEE conference format. Compiles on Overleaf with pdfLaTeX + BibTeX.
+% Every number in this paper is produced by a script in the repository:
+%   classifier, ablation        runs/milk10k_resnet50_seed42/metrics.json
+%   native inference            scripts/milk_native_infer.py
+%   decision engine, baselines  scripts/run_eade_milk.py  (outputs/eade_milk/)
+% Update the tables when seeds 7 and 2026 are added (see docs/09).
+% =============================================================================
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,shapes.geometric,fit,calc}
+\usepackage[hidelinks]{hyperref}
+
+\newcommand{\dguard}{\textsc{D-Guard}}
+\newcommand{\PROCEED}{\textsc{Proceed}}
+\newcommand{\ACQUIRE}{\textsc{Acquire}}
+\newcommand{\DEFER}{\textsc{Defer}}
+
+\begin{document}
+
+\title{D-GUARD: Risk-Controlled, Cost-Aware Evidence Acquisition and Deferral for
+Multimodal Dermatology AI}
+
+% ---- Fill in before submission ---------------------------------------------
+\author{
+\IEEEauthorblockN{Author One}
+\IEEEauthorblockA{\textit{Department} \\
+\textit{Institution}\\
+City, Country \\
+email@domain}
+\and
+\IEEEauthorblockN{Author Two}
+\IEEEauthorblockA{\textit{Department} \\
+\textit{Institution}\\
+City, Country \\
+email@domain}
+\and
+\IEEEauthorblockN{Guide Name}
+\IEEEauthorblockA{\textit{Department} \\
+\textit{Institution}\\
+City, Country \\
+email@domain}
+}
+
+\maketitle
+
+% =============================================================================
+\begin{abstract}
+Skin-lesion classifiers return a confident label even when the evidence does not
+support one: a softmax output cannot express ignorance, and naive multimodal fusion
+cannot discount an uninformative input. We present \dguard{}, a decision layer that,
+for each patient, chooses among three actions---answer (\PROCEED{}), request a
+dermoscopic image (\ACQUIRE{}), or hand the case to a clinician (\DEFER{}). Each input
+modality is given its own evidential head producing belief and ignorance; opinions are
+combined with Dempster--Shafer's rule, which removes absent modalities exactly and
+separates \emph{conflict} between sources from shared \emph{ignorance}. A
+class-conditional conformal set over \{benign, malignant\} blocks false reassurance, a
+Learn-then-Test threshold certifies the malignancy-miss risk, and an explicit cost
+matrix with a learned acquisition-value estimator selects the cheapest action.
+Deferred cases still receive an unconfirmed tentative opinion and an urgency flag. On
+MILK10k, where every lesion has a paired clinical and dermoscopic image, the
+acquisition question is measured rather than simulated. On 787 held-out lesions,
+\dguard{} answers 36.8\% of cases with a 1.7\% malignancy-miss rate, against 5.2\% for
+confidence-based abstention at identical coverage, while requesting dermoscopy for
+6.4\% of patients. We report the negative results alongside: fusing all modalities
+does not beat the best pair, and on mean cost an always-answer policy is cheaper.
+\end{abstract}
+
+\begin{IEEEkeywords}
+selective prediction, evidential deep learning, Dempster--Shafer theory, conformal
+prediction, risk control, active acquisition, dermatology, learning to defer
+\end{IEEEkeywords}
+
+% =============================================================================
+\section{Introduction}
+
+Deep classifiers can match dermatologists on curated images~\cite{esteva2017}, yet
+deployment fails less often for lack of accuracy than for misplaced confidence: a blurred
+photograph, a missing history, or an image and history that point to different
+diagnoses all still produce a confident label. Two properties of standard pipelines cause
+this. First, softmax probabilities must sum to one, so the model has no way to say that
+\emph{no} class is supported. Second, concatenation-based multimodal fusion gives every
+modality a fixed slot, so an uninformative modality contributes noise on every case. On
+PAD-UFES-20~\cite{pacheco2020padufes} we measured the consequence directly: adding a
+weak text modality to image and metadata \emph{lowered} macro-F1 from 0.653 to 0.633.
+
+A clinician facing the same uncertainty does not simply guess. They either look more
+closely---for skin lesions, typically with a dermatoscope---or refer the patient. We
+formalise this as a three-action decision:
+\begin{itemize}
+\item \PROCEED{}: state a diagnosis now;
+\item \ACQUIRE{}: request a dermoscopic image, then decide again;
+\item \DEFER{}: route to a clinician, with the system's tentative opinion attached.
+\end{itemize}
+
+\noindent\textbf{Contributions.}
+\begin{enumerate}
+\item A decision rule that integrates per-modality evidential opinions, Dempster--Shafer
+fusion, a benign/malignant conformal gate, Learn-then-Test risk control and an explicit
+cost matrix into a single calibrated \PROCEED{}/\ACQUIRE{}/\DEFER{} policy
+(Sec.~\ref{sec:method}).
+\item A measurement of the value of acquiring dermoscopy on real paired data
+(MILK10k~\cite{milk10k}), with a learned acquisition-value estimator evaluated against
+random and uncertainty-based acquisition (Sec.~\ref{sec:results}).
+\item A working care platform---patient intake, a prioritised clinician queue, follow-up
+with change detection, and a full audit trail---built around the policy
+(Sec.~\ref{sec:system}).
+\item A transparent report of what did not work, including a fusion hypothesis that
+failed and two design errors uncovered by the evaluation (Sec.~\ref{sec:negative}).
+\end{enumerate}
+
+None of the individual components is new; the contribution is their integration into a
+calibrated decision and the measurement of that decision on paired data.
+
+% =============================================================================
+\section{Related Work}
+
+\textbf{Uncertainty and evidential fusion.} Evidential deep learning~\cite{sensoy2018edl}
+places a Dirichlet distribution over class probabilities, giving a per-sample ignorance
+mass. Trusted Multi-View Classification~\cite{han2021tmc} combines per-view Dirichlet
+opinions with Dempster--Shafer combination~\cite{dempster1967,shafer1976} in the
+subjective-logic formulation~\cite{josang2016}. We adopt this fusion and add a decision
+layer on top.
+
+\textbf{Conformal prediction and risk control.} Split conformal
+prediction~\cite{vovk2005,angelopoulos2021gentle} produces prediction sets with
+distribution-free coverage. APS~\cite{romano2020aps} adapts set size to difficulty; LAC
+sets~\cite{sadinle2019lac} are smallest on average. Class-conditional (Mondrian)
+calibration gives per-class coverage, relevant when groups differ~\cite{lu2022fair}.
+Learn-then-Test~\cite{angelopoulos2025ltt} and conformal risk
+control~\cite{angelopoulos2022crc} calibrate thresholds for general risks with
+finite-sample guarantees.
+
+\textbf{Selective prediction and deferral.} Chow's rule~\cite{chow1970} rejects when
+expected cost exceeds a reject cost; selective classification~\cite{geifman2017selective}
+and learning to defer~\cite{mozannar2020defer} extend this to deep models. Traub et
+al.~\cite{traub2024augrc} show that AURC is unsuitable for aggregating across thresholds
+and propose AUGRC, which we use as the ranking metric.
+
+\textbf{Multimodal dermatology.} MetaBlock~\cite{pacheco2021metablock} fuses metadata into
+image features; Derm7pt~\cite{kawahara2019derm7pt} pairs clinical and dermoscopic images
+for the seven-point checklist. PanDerm~\cite{yan2025panderm} is a dermatology foundation
+model. HOT AI~\cite{mehta2025hotai} recommends dermoscopy in a multi-task setting; our
+work differs in calibrating the acquire/defer decision with explicit risk control and in
+measuring acquisition value on paired data.
+
+% =============================================================================
+\section{Method}\label{sec:method}
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=0.45cm and 0.55cm,
+  box/.style={draw, rounded corners=2pt, align=center, font=\footnotesize,
+              minimum height=1.05cm, text width=2.3cm, fill=gray!6},
+  act/.style={draw, rounded corners=2pt, align=center, font=\footnotesize\bfseries,
+              minimum height=0.55cm, text width=1.7cm},
+  arr/.style={-{Stealth[length=2mm]}, thick}]
+  \node[box] (in1) {clinical photo};
+  \node[box, below=0.15cm of in1] (in2) {dermoscopy\\\scriptsize(if acquired)};
+  \node[box, below=0.15cm of in2] (in3) {metadata};
+  \node[box, right=of in2, text width=2.5cm, minimum height=3.4cm] (heads)
+    {per-modality\\ evidential heads\\[3pt]\scriptsize $e_m \ge 0,\ \alpha_m=e_m+1$\\
+     $b_m = e_m/S_m,\ u_m=K/S_m$\\[3pt] absent $\Rightarrow$ $(b{=}0,u{=}1)$};
+  \node[box, right=of heads, text width=2.5cm, minimum height=3.4cm] (ds)
+    {Dempster--Shafer\\ fusion\\[3pt]\scriptsize belief $b$, ignorance $u$,\\
+     conflict $C$ (max over fold)\\[3pt] weights $w_m \propto 1-u_m$};
+  \node[box, right=of ds, text width=2.7cm, minimum height=3.4cm] (gate)
+    {safety gates\\[3pt]\scriptsize benign/malignant conformal\\ set (LAC, Mondrian)\\
+     LTT threshold on $1-u$\\ conflict $> \tau_C$\\[3pt] cost matrix +\\ acquisition value $\hat h$};
+  \node[act, right=1.0cm of gate, yshift=1.0cm, fill=green!12] (p) {PROCEED};
+  \node[act, right=1.0cm of gate, fill=yellow!20] (a) {ACQUIRE};
+  \node[act, right=1.0cm of gate, yshift=-1.0cm, fill=red!12] (d) {DEFER};
+  \draw[arr] (in1.east) -- (heads.west |- in1.east);
+  \draw[arr] (in2.east) -- (heads.west |- in2.east);
+  \draw[arr] (in3.east) -- (heads.west |- in3.east);
+  \draw[arr] (heads) -- (ds);
+  \draw[arr] (ds) -- (gate);
+  \draw[arr] (gate.east) -- (p.west);
+  \draw[arr] (gate.east) -- (a.west);
+  \draw[arr] (gate.east) -- (d.west);
+  \draw[arr, dashed] (a.south) .. controls +(0,-2.4) and +(0,-1.9) .. node[below, font=\scriptsize]{acquire dermoscopy, re-decide (stage B)} (in2.south);
+\end{tikzpicture}
+\caption{\dguard{}. Each modality forms its own opinion; Dempster--Shafer fusion removes
+absent modalities exactly and separates conflict from ignorance; calibrated gates and a
+cost matrix choose among three actions. \DEFER{} and \ACQUIRE{} still carry the
+system's tentative opinion.}
+\label{fig:arch}
+\end{figure*}
+
+\subsection{Evidential opinions per modality}
+For $K$ classes, a head $f_m$ maps the embedding of modality $m$ to non-negative
+evidence $e_m=\mathrm{softplus}(f_m(z_m))\in\mathbb{R}^K_{\ge 0}$. With
+$\alpha_m=e_m+1$ and $S_m=\sum_k\alpha_{m,k}$,
+\begin{equation}
+b_{m,k}=\frac{e_{m,k}}{S_m},\qquad u_m=\frac{K}{S_m},\qquad \sum_k b_{m,k}+u_m=1.
+\end{equation}
+The ignorance $u_m$ approaches one when the head finds no evidence. Heads are trained
+with the evidential loss of~\cite{sensoy2018edl} and an annealed KL term. An absent
+modality is assigned the vacuous opinion $(b=\mathbf{0},u=1)$.
+
+\subsection{Dempster--Shafer fusion}
+Two opinions are combined as
+\begin{align}
+C &= \textstyle\sum_{i\ne j} b_{1,i}\,b_{2,j}, \\
+b_k &= \frac{b_{1,k}b_{2,k}+b_{1,k}u_2+b_{2,k}u_1}{1-C},\qquad
+u=\frac{u_1u_2}{1-C}.
+\end{align}
+The rule is commutative and associative, so modalities are folded in any order. The
+vacuous opinion is its identity element: an absent modality changes the result by
+exactly zero, without imputation. We carry the fused conflict as the maximum $C$ over all
+pairwise steps, so that a strongly conflicting pair is not diluted by later agreement.
+The policy reads the pignistic probability $p_k=b_k+u/K$.
+
+Two properties matter for the decision. First, a modality with high $u_m$ has little
+influence on the fused belief, so per-case \emph{dynamic} modality weights emerge; we
+report them as $w_m=(1-u_m)/\sum_{m'}(1-u_{m'})$. Second, $C$ and $u$ are distinct: two
+confident sources that disagree produce high $C$ and low $u$ (a human should arbitrate),
+while two ignorant sources produce low $C$ and high $u$ (more evidence may help).
+Distribution-divergence measures report the second case as agreement.
+
+\subsection{Benign/malignant conformal gate}
+The safety-relevant question is whether malignancy can be ruled out, so the gate uses a
+two-outcome set over $\{\text{benign},\text{malignant}\}$ with
+$p_{\text{mal}}=\sum_{k\in\mathcal{M}}p_k$. We use the LAC score $s=1-p_{y}$~\cite{sadinle2019lac}
+with a separate quantile per outcome (Mondrian):
+\begin{equation}
+\hat q_c=\mathrm{Quantile}\!\left(\{s_i: y_i=c\};\ \tfrac{\lceil (n_c+1)(1-\alpha)\rceil}{n_c}\right),
+\end{equation}
+so that at least $1-\alpha$ of malignant lesions retain ``malignant'' in their set. The gate
+blocks \PROCEED{} when the stated label is benign while ``malignant'' is in the set
+(false reassurance), or when the set is empty.
+
+\subsection{Risk control with Learn-then-Test}
+For a confidence score $g=1-u$ and threshold $\lambda$, let $R(\lambda)$ be the
+malignancy-miss rate among accepted cases. Learn-then-Test~\cite{angelopoulos2025ltt}
+tests $H_\lambda: R(\lambda)>\alpha$ over a grid with Hoeffding--Bentkus $p$-values and
+fixed-sequence testing, returning $\hat\lambda$ such that
+\begin{equation}
+\Pr\big(R(\hat\lambda)\le\alpha\big)\ge 1-\delta
+\end{equation}
+over the calibration draw, under exchangeability. If no $\lambda$ is certified the
+procedure reports so rather than returning a threshold.
+
+\subsection{Cost-aware three-action policy}
+Let $L\in\mathbb{R}^{K\times K}$ be the loss of stating $\hat y$ when the truth is $y$:
+0 if correct, 1 if both are in the same group, $c_{\text{miss}}$ for a malignant lesion
+called benign, and $c_{\text{fa}}=2$ for the reverse. The stated label is the most probable
+class $\hat y=\arg\max_k p_k$, with expected loss $r_P=\sum_y p_y L_{y,\hat y}$. With
+deferral cost $c_D=1.5$, acquisition cost $c_A=0.5$ and an estimate $\hat h(x)$ of the
+loss reduction dermoscopy would bring,
+\begin{equation}
+r_A=r_P-\hat h(x)+c_A,\qquad r_D=c_D,
+\end{equation}
+and the policy takes the cheapest admissible action. Conflict above the validation 90th
+percentile forces \DEFER{} (more evidence does not resolve a contradiction); gate
+violations remove \PROCEED{}. At most one acquisition round is allowed. The estimator
+$\hat h$ is a gradient-boosted regressor fitted on validation lesions, mapping
+stage-A evidence ($u$, $C$, $\max_k p_k$, $p_{\text{mal}}$, normalised entropy, $u_m$) to
+the realised loss reduction from adding dermoscopy.
+
+\textbf{Tentative opinion.} Every decision---including \DEFER{} and \ACQUIRE{}---carries
+the most probable diagnosis, a three-class differential, $p_{\text{mal}}$, and an urgency
+flag (urgent if $p_{\text{mal}}\ge 0.3$ or a malignant class is in the conformal set). It is
+labelled unconfirmed and is never emitted as a diagnosis; a deferred patient is told what
+the system suspects and that a clinician must confirm it.
+
+% =============================================================================
+\section{System}\label{sec:system}
+
+The policy is embedded in a care platform with three roles. \emph{Patients} open a case,
+upload a photograph and answer intake questions; the system assesses and either returns an
+assessment with instructions (\PROCEED{}), asks for a dermoscopic image and re-assesses
+(\ACQUIRE{}), or places the case in the clinician queue (\DEFER{}). \emph{Clinicians} see a
+queue ordered by deferral, then urgency, then age, with images, the tentative opinion,
+$u$, $C$, per-modality votes and dynamic weights, and the measured reliability of each
+modality for the tentative diagnosis; they confirm, override, or request an in-person
+visit, write an instruction and schedule a follow-up. At follow-up a new photograph is
+re-assessed and compared with the previous assessment; an increase of 0.15 in
+$p_{\text{mal}}$ or a change to a malignant tentative diagnosis returns the case to the
+queue as urgent. Every event is written to an append-only audit log together with the
+policy configuration that produced it. An agent pipeline (specialist models, an evidence
+auditor, a retrieval agent and a report writer with claim verification) produces the
+narrative; retrieval of similar training cases is restricted to the training split and
+excluded from the decision path, because exchangeability-based guarantees do not survive
+a decision that depends on a changing corpus.
+
+% =============================================================================
+\section{Experimental Setup}\label{sec:setup}
+
+\textbf{Data.} MILK10k~\cite{milk10k}: 5{,}240 lesions, each with one clinical close-up
+and one dermoscopic image (10{,}480 images, all byte-distinct), 11 diagnostic classes,
+95.7\% histopathologically confirmed. The population is referral-like: 71.7\% of lesions are
+malignant and basal cell carcinoma alone accounts for 48.1\%. No patient identifiers are
+published, so splits are by lesion (train 3{,}667 / validation 786 / test 787); both images
+of a lesion always fall in the same split. Malignant classes are AKIEC, BCC, MAL\_OTH,
+MEL and SCCKA.
+
+\textbf{Model.} A ResNet50~\cite{he2016resnet} backbone pretrained on ImageNet is shared
+by both image types, with a 256-d projection and a separate evidential head per image
+type; metadata (age, sex, site, skin tone, seven MONET concept scores; 26 features) uses a
+residual MLP and its own head. Training: 25 epochs, backbone frozen for 3, modality
+dropout 0.25, best epoch by validation macro-F1 (epoch 23). One seed (42).
+
+\textbf{Protocol.} Stage A uses the clinical photograph and metadata. Cases routed to
+\ACQUIRE{} are re-assessed in stage B with the lesion's real dermoscopic image. Conformal
+sets ($\alpha=0.10$), conflict thresholds, LTT ($\alpha=0.05$, $\delta=0.10$) and $\hat h$
+are fitted on validation; test is scored once.
+
+\textbf{Baselines.} B1: always answer from stage A. B2: always acquire dermoscopy and
+answer. B3: max-softmax abstention at matched coverage, with and without dermoscopy for
+all. B5: acquire dermoscopy for a random subset, or for the highest-entropy subset, at
+\dguard{}'s acquisition rate, then answer.
+
+\textbf{Metrics.} Coverage (fraction answered); accuracy and balanced accuracy among
+answered; malignancy-miss rate among answered (malignant called benign); false-alarm rate
+among answered benign lesions; mean cost per case under $L$; acquisition efficiency
+$\mathrm{AE}=(G_\pi-G_{\text{rand}})/(G_{\text{oracle}}-G_{\text{rand}})$; AUGRC~\cite{traub2024augrc}.
+
+% =============================================================================
+\section{Results}\label{sec:results}
+
+\subsection{Classifier and the value of dermoscopy}
+
+\begin{table}[t]
+\centering
+\caption{Classifier on the MILK10k test split (787 lesions).}
+\label{tab:clf}
+\begin{tabular}{lcc}
+\toprule
+ & photo + metadata & + dermoscopy \\
+\midrule
+Macro-F1 & 0.286 & \textbf{0.376} \\
+Accuracy & 0.644 & \textbf{0.690} \\
+Malignant vs.\ benign AUROC & 0.799 & \textbf{0.856} \\
+Mean ignorance $u$ & 0.676 & \textbf{0.439} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:clf} shows that dermoscopy improves both diagnosis and malignancy
+discrimination, and that the model registers the additional evidence: mean ignorance
+falls from 0.676 to 0.439. The full model reaches macro AUROC 0.824; per-class F1 ranges
+from 0.84 (BCC) and 0.88 (VASC) to 0 for the three rarest classes (11 test lesions in
+total). Running the trained checkpoint locally reproduces the training-run test macro-F1
+(0.376 vs.\ 0.379).
+
+\begin{table}[t]
+\centering
+\caption{Modality ablation (test macro-F1).}
+\label{tab:ablation}
+\begin{tabular}{lc|lc}
+\toprule
+Sources & F1 & Sources & F1 \\
+\midrule
+clinical & 0.268 & clinical + metadata & 0.290 \\
+metadata & 0.245 & clinical + dermoscopy & 0.379 \\
+dermoscopy & 0.396 & \textbf{dermoscopy + metadata} & \textbf{0.403} \\
+ & & all three & 0.379 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:ablation}: using all three modalities does \emph{not} exceed the best pair.
+Evidential fusion limited the damage of the weaker clinical photograph but did not remove
+it.
+
+\subsection{Decision policy}
+
+\begin{table*}[t]
+\centering
+\caption{Two-stage decision on the MILK10k test split ($c_{\text{miss}}=5$). Miss: malignant
+called benign, among answered. FA: benign called malignant, among answered benign.}
+\label{tab:policy}
+\begin{tabular}{lcccccc}
+\toprule
+Policy & Answered & Dermoscopy & Accuracy & Miss & FA & Mean cost \\
+\midrule
+B1 always answer, photo & 100\% & 0\% & 0.644 & 5.2\% & 52.4\% & \textbf{0.703} \\
+B2 always acquire, answer & 100\% & 100\% & 0.690 & 6.5\% & 44.7\% & 1.187 \\
+B3 max-softmax abstention (matched coverage) & 36.8\% & 0\% & 0.841 & 5.2\% & 23.6\% & 1.098 \\
+B3 + dermoscopy for all & 36.8\% & 100\% & \textbf{0.931} & 2.1\% & 26.2\% & 1.517 \\
+B5 random acquisition, same rate & 100\% & 6.4\% & 0.651 & 5.2\% & 51.4\% & 0.726 \\
+B5 entropy acquisition, same rate & 100\% & 6.4\% & 0.654 & 5.6\% & 49.5\% & 0.732 \\
+\midrule
+\dguard{} & 36.8\% & 6.4\% & 0.838 & \textbf{1.7\%} & 32.7\% & 1.086 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+Table~\ref{tab:policy} gives the main result. At the same coverage as max-softmax
+abstention, \dguard{} reduces the malignancy-miss rate from 5.2\% to 1.7\% at similar
+accuracy and lower mean cost, while requesting dermoscopy for 6.4\% of patients rather than
+all. Requesting dermoscopy for everyone (B3 + dermoscopy) is more accurate but 40\% more
+costly and presumes a dermatoscope at every encounter. The acquisition estimator captures
+substantially more of dermoscopy's benefit than uncertainty-based selection:
+AE $=+0.27$ vs.\ $+0.01$ for entropy at $c_{\text{miss}}=5$, and $+0.40$ vs.\ $-0.06$ at
+$c_{\text{miss}}=10$. Learn-then-Test certified a threshold at both stages
+($\hat\lambda=0.354$ and $0.313$); with 432 calibration cases on PAD-UFES-20 it could not.
+With native evidential heads, $1-u$ ranks errors as well as max-softmax (AUGRC 0.0900 vs.\
+0.0893).
+
+\begin{table}[t]
+\centering
+\caption{Sensitivity to the cost of a missed malignancy.}
+\label{tab:cost}
+\begin{tabular}{ccccc}
+\toprule
+$c_{\text{miss}}$ & Answered & Miss & B3 miss & Malignant answers \\
+\midrule
+2 & 40\% & 4.1\% & 5.1\% & 80\% \\
+3 & 39\% & 4.2\% & 4.9\% & 82\% \\
+5 & 37\% & 1.7\% & 5.2\% & 86\% \\
+10 & 32\% & 0.0\% & 3.5\% & 100\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:cost}: raising $c_{\text{miss}}$ trades coverage for safety. At
+$c_{\text{miss}}=10$ the miss rate is zero, but every answer is a malignant diagnosis: on a
+population that is 73.6\% malignant, a system that only confirms cancers cannot reassure
+anyone. We regard $c_{\text{miss}}=5$ as the balanced operating point; the choice is a
+clinical judgement.
+
+\subsection{Diagnosis-dependent modality reliability}
+
+On validation, the fraction of lesions for which each modality alone names the true class
+differs by diagnosis: for SCC/keratoacanthoma dermoscopy is far more reliable than the
+clinical photograph (0.74 vs.\ 0.36), for benign keratoses likewise (0.31 vs.\ 0.17), while
+for melanoma the clinical photograph is the most reliable single source (0.52 vs.\ 0.40).
+These measured values replace a hand-specified prior used in an earlier version of the
+system, which assumed 0.96 image reliability for melanoma. They are shown to clinicians
+and never alter a probability.
+
+% =============================================================================
+\section{What Did Not Work}\label{sec:negative}
+
+\textbf{Full fusion does not beat the best pair} (Table~\ref{tab:ablation}); the fusion
+hypothesis is not supported by this run.
+
+\textbf{Cost-optimal labelling degenerates.} Stating the label of minimum expected cost
+(Chow's rule with $c_{\text{miss}}=10$) called 98.5\% of lesions malignant, giving a zero
+miss rate for a trivial reason. We therefore state the most probable class and let the cost
+matrix decide only whether it may be stated.
+
+\textbf{Two-class APS degenerates.} Without randomisation, the APS score of any lesion
+whose true outcome is ranked second equals one; the benign quantile collapsed to one and
+the gate deferred every case. A symmetric gate that also blocked ``likely malignant''
+statements compounded this. LAC scores and a gate restricted to false reassurance fixed
+both.
+
+\textbf{A fusion implementation drifted.} The training script's own copy of the fold
+reported only the final pairwise conflict, which on MILK10k is always against the absent
+text modality and therefore zero. Conflict was not in the loss, so weights were unaffected;
+we recompute it from the checkpoint.
+
+\textbf{Mean cost favours always answering} (Table~\ref{tab:policy}). Each deferral costs
+1.5 and \dguard{} defers 63\% of cases. The advantage of \dguard{} is the safety of the
+answers it gives at matched coverage, not throughput.
+
+% =============================================================================
+\section{Limitations}
+
+Results are from one training seed and an ImageNet-pretrained ResNet50; the image encoder
+limits coverage, and a dermatology foundation encoder~\cite{yan2025panderm} is the expected
+remedy. The validation split selects the epoch and calibrates the policy. MILK10k lacks
+patient identifiers, so lesion-level splits leave residual patient-level leakage, and it
+publishes no centre identifier, so centre shift cannot be evaluated. The population is a
+referral population; no screening claim is made. The guarantees assume exchangeability
+and do not hold under distribution shift. The cost matrix is declared, not derived. The
+system is a research prototype without clinical validation.
+
+% =============================================================================
+\section{Conclusion}
+
+\dguard{} turns per-modality evidence into a calibrated choice among answering, acquiring
+dermoscopy and deferring, and keeps deferral informative by attaching a tentative opinion
+and urgency to every case. On paired clinical--dermoscopic data it cuts the malignancy-miss
+rate by a factor of three relative to confidence-based abstention at equal coverage while
+acquiring dermoscopy for few patients. Its main limitation---answering only about a third
+of cases alone---is set by the classifier rather than the policy, which makes stronger
+encoders and multi-seed evaluation the immediate next steps.
+
+\section*{Reproducibility}
+Code, configuration, per-case test predictions and every script used for the tables are
+available in the project repository. Model weights and data are not redistributed; MILK10k
+is available from the ISIC Archive under CC-BY-NC.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\end{document}

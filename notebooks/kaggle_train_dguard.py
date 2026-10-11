@@ -661,8 +661,17 @@ class DGuard(nn.Module):
 
         # pignistic probability: distribute ignorance uniformly
         prob = fused["belief"] + fused["u"] / K
+        # Conflict of the WHOLE fold, carried as the max over every pairwise
+        # step - matching src/evidence/evidential.py. Reporting only the LAST
+        # step's conflict (as an earlier version did) is silently wrong: on
+        # MILK10k the last modality is always the absent text, its opinion is
+        # vacuous, and conflict with a vacuous opinion is exactly zero. The
+        # first Kaggle run exported conflict_C == 0.0 for all 787 test lesions
+        # for precisely this reason.
+        total_conflict = (torch.stack(conflicts).amax(0) if conflicts
+                          else torch.zeros(B, 1, device=dev))
         return {"prob": prob, "belief": fused["belief"], "u": fused["u"],
-                "conflict": conflicts[-1] if conflicts else torch.zeros(B, 1, device=dev),
+                "conflict": total_conflict,
                 "per_modality": ops, "presence": pres}
 
 

@@ -180,14 +180,99 @@ Now computed after consensus, and `None` (not measured) is kept distinct from `0
 (measured, nothing agreed). Same family as the `recovery_rate` defect in §5: a metric
 whose value is determined by where it is called rather than by the system's behaviour.
 
-## 16. Still unknown
+## 16. The exported conflict score was zero for every lesion
+
+The first MILK10k training run exported `conflict_C = 0.0` for **all 787** test lesions.
+The Kaggle trainer had its own copy of the Dempster–Shafer fold that reported only the
+conflict of the **last** pairwise step. On MILK10k the last modality is the absent text,
+its opinion is vacuous, and conflict with a vacuous opinion is exactly zero by
+construction — so every real conflict from the earlier steps was thrown away.
+
+The library version (`src/evidence/evidential.py`) was correct all along: it carries the
+**maximum** conflict over the fold. The trainer had drifted from it. Conflict was not part
+of the training loss, so the trained weights were unaffected; `scripts/milk_native_infer.py`
+recomputes conflict from the checkpoint (now non-zero on 787/787 lesions) and the trainer
+is fixed for future runs.
+
+Lesson: two implementations of the same formula will drift. The trainer is self-contained
+on purpose (it must run on Kaggle without this repository), which makes a shared test the
+only defence.
+
+## 17. Using every source did not beat the best pair on MILK10k either (H1)
+
+| | macro-F1 |
+|---|---|
+| dermoscopy + metadata | **0.403** |
+| all three | 0.379 |
+
+Evidence-aware fusion was supposed to let a weaker source fall silent. It reduced the
+damage — but the clinical photo still pulls the result down by 0.024. Same shape as the
+PAD-UFES-20 text result (§2), smaller gap. **H1 is not supported by this run.** One seed;
+seeds 7 and 2026 may move it either way.
+
+## 18. Chow's rule, as written, called 98.5% of lesions cancer
+
+The policy first stated the label with the lowest expected cost. With a missed cancer
+priced at 10 and a false alarm at 2, the cost-optimal label is "malignant" whenever
+P(malignant) > 1/6. On a population that is 73.6% malignant, that is almost every lesion.
+
+The result looked excellent — **0.000 missed cancers** for "always answer" — for a useless
+reason: it called 98.5% of lesions malignant. A metric a degenerate policy maxes out is not
+measuring safety (the same lesson as `recovery_rate`, §5).
+
+Fix: the system states the **most likely** diagnosis (`label_rule="argmax"`); the cost
+matrix decides only **whether** it may state it alone. Both options remain in the code so
+the comparison is reproducible.
+
+## 19. The first safety gate deferred 100% of test lesions
+
+Two independent errors, found together:
+
+1. **APS on two classes degenerates.** Without randomisation, any lesion whose true class the
+   model ranks second gets a score of exactly 1.0. The model calls about half of benign
+   lesions malignant, so the benign quantile became 1.0 and every set contained both
+   outcomes. Fixed with the LAC score `1 − p(true)`.
+2. **The gate blocked both directions.** Its purpose is to stop *false reassurance* ("it's
+   harmless" while cancer is possible). It was also blocking "likely cancer, see a
+   dermatologist" while benign was possible — the safe direction. Fixed with
+   `ambiguity_gate="reassurance"`.
+
+The earlier 11-class version of the gate had deferred 70% for a related reason: an 11-class
+set from a 0.38-macro-F1 model is large almost everywhere.
+
+## 20. At the pre-registered cost, the system can only ever say "cancer"
+
+With a missed cancer priced at 10, saying "benign" needs P(malignant) below about 0.15, and
+this model rarely gets that low. So at cost 10 **every** answer D-GUARD gives is a cancer
+diagnosis (100% of answers, false-alarm rate 1.000 among the few benign lesions it answers).
+It never misses a cancer — and never reassures anyone. Cost 5 is the balanced point
+(1.7% missed, 86% of answers malignant). The cost is a clinical judgement; we report both.
+
+## 21. On mean cost, "always answer" beats D-GUARD
+
+Mean cost per case: always answer from the photo **0.703**, D-GUARD **1.086** (cost 5).
+Each deferral costs 1.5 and D-GUARD defers 63%. D-GUARD wins at **matched coverage** —
+fewer missed cancers *and* lower cost than confidence-based abstention — which is the fair
+comparison for a deferral system. But a reader who values throughput above safety among
+answered cases would prefer always answering, and should be told so.
+
+## 22. Rare classes are never predicted
+
+BEN_OTH (4 test lesions), INF (6) and MAL_OTH (1) get F1 = 0 — the model never predicts
+them. Class weighting in the loss was not enough at this data size. No claim is made about
+these classes.
+
+## 23. Still unknown
 
 Not yet answerable, and marked as such rather than guessed:
 
-- whether the acquisition policy beats random/greedy (needs MILK10k paired data)
+- whether the results hold across seeds 7 and 2026
+- whether a dermatology encoder (DermLIP) changes H1
 - whether per-modality `u_m` genuinely predicts per-modality error (**H4**)
-- whether DS conflict mass fires on real contradictions rather than merely hard cases (**H5**)
-- whether the guarantee degrades gracefully under shift (**H3**)
+- whether DS conflict fires on real contradictions rather than merely hard cases (**H5**) —
+  now testable, since conflict is computed correctly
+- whether the guarantee degrades gracefully under shift (**H3**, needs the PAD-UFES run)
 - whether retrieval adds anything over `u` alone
 
-All require the GPU training run and a valid held-out evaluation.
+**Answered since the last version:** the acquisition policy **does** beat random and
+entropy-based acquisition (AE +0.27 vs +0.01 at cost 5, +0.40 vs −0.06 at cost 10).

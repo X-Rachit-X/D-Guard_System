@@ -36,7 +36,8 @@ htmlcov/
 # ---- experiment tracking ----------------------------------------------------
 wandb/
 mlruns/
-runs/
+runs/*
+!runs/milk10k_*/
 events.out.tfevents.*
 
 # ---- secrets ----------------------------------------------------------------
@@ -52,3 +53,12 @@ Thumbs.db
 # MILK10k dataset (CC-BY-NC, 368MB) - never commit
 milk10k/
 milk10k.zip
+
+# Previous project, kept locally as reference only (large; node_modules + weights)
+Old_system/
+
+# Care platform database and uploads
+data/care/
+
+# Trained run artifacts: keep metrics/predictions, never weights
+runs/**/checkpoints/
