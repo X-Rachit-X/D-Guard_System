@@ -91,7 +91,18 @@ cases is an assumption still to be tested (H5).
   ~1 calibration point), so tone 0 receives **no** per-group guarantee and tone 1 is
   borderline at 24 calibration lesions against the 20 required.
 - Retrieval is explanation-only and deliberately outside the decision path: admitting a
-  live external corpus would break exchangeability and forfeit the risk guarantee.
+  live external corpus would break exchangeability and forfeit the risk guarantee. The
+  index is built from the **training split only** and `--verify` asserts no calibration or
+  test patient is present, because a retrieved neighbour would carry a held-out label into
+  the narrative where no metric would detect it.
+- **The runtime retrieval index excludes metadata** and is measurably weaker for it
+  (neighbour agreement 0.500 vs 0.875). The preprocessor emits 116 columns at runtime but
+  114 fitted on train only, so the stronger index is not runtime-queryable until the
+  train-fitted preprocessor is persisted. Not done.
+- **Whether retrieval adds anything over the ignorance score `u` alone is untested.** It
+  is not claimed as a contribution.
+- The retrieval index is currently built on **PAD-UFES-20** (6 classes) and must be
+  rebuilt on MILK10k after training.
 - The LLM writes reports; it does not diagnose, and no diagnostic credit is attributed to
   it.
 

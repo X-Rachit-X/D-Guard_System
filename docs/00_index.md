@@ -22,6 +22,8 @@ guarantee that v1 had and the v4 spec discarded. It **supersedes** all earlier d
 | 6 | [06_training_guide.md](06_training_guide.md) | **GPU work — the code you run on Kaggle** |
 | 7 | [07_literature.md](07_literature.md) | Verified citations, comparable numbers, corrections, reading order |
 | 8 | [08_implementation_status.md](08_implementation_status.md) | What is built and verified; how to reproduce |
+| 9 | **[09_what_you_need_to_do.md](09_what_you_need_to_do.md)** | **Every task needing a human or a GPU, with commands** |
+| 10 | [10_retrieval.md](10_retrieval.md) | RAG design, the leakage guard, and the 7-agent pipeline |
 
 ## Supporting
 
@@ -47,11 +49,18 @@ Learn-then-Test for `P(risk ≤ α) ≥ 1−δ`.
 
 **Does it work?** The machinery does, verified: at matched coverage (0.433) the policy's
 malignancy miss rate is **0.0050 vs 0.0597** for max-softmax abstention. Conformal
-coverage 0.8944 against a 0.90 target. 425 tests pass. But those numbers run over legacy
+coverage 0.8944 against a 0.90 target. 442 tests pass. But those numbers run over legacy
 weights trained on overlapping data, so they are **not** generalisation estimates.
 
 **Can I trust the old results?** No. The shipped training code evaluated on a test set
 that was 100% training data and rewrote predictions toward hardcoded targets. Doc 0.
+
+**Is the RAG / agentic part done?** Yes. The seven agents run end to end, and similar-case
+retrieval is built, wired in and leak-guarded — 1,403 training cases indexed, with every
+calibration and test patient excluded and that property asserted by `--verify`. It had
+been written and unit-tested but **never connected**: nothing built an index and
+`build()` never attached a Librarian, so it returned "index not loaded" on every real
+case. Doc 10.
 
 **What needs a GPU?** Training the evidential heads and the image encoder — the only
 remaining blocker. The image pathway is encoder-limited: frozen ImageNet reaches only

@@ -116,7 +116,7 @@ several published results do not state patient-level grouping.
 | Honest baseline ladder | ✅ 3 seeds |
 | DERMA-STRESS, 18 conditions | ✅ running |
 | Orchestrator, FastAPI, 2 Streamlit apps | ✅ working (EADE or legacy ladder) |
-| Test suite | ✅ **425 tests** |
+| Test suite | ✅ **442 tests** |
 | MILK10k migration | ⬜ needs the dataset (ISIC account) |
 | Evidential heads trained natively | ⬜ needs GPU — [06_training_guide.md](06_training_guide.md) |
 | DermLIP_PanDerm image encoder | ⬜ weights verified public; needs HF token |

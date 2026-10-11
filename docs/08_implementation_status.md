@@ -22,11 +22,13 @@ What is built, what is verified, and how to reproduce it. Updated 2026-10-11.
 | Statistics (bootstrap, McNemar, BH) | `src/eval/stats.py` | 23 | hand-computed values; BH boundary rule fixed |
 | Config ↔ code consistency | — | 20 | class ordering and axis length pinned |
 | Orchestrator, API, 2 Streamlit apps | `src/`, `app/` | 21 | both decision paths run |
+| **RAG similar-case retrieval** | `src/retrieval/rag_index.py`, `scripts/build_rag_index.py` | **39** | 1,403 training cases indexed; **no calibration/test patient present**, asserted by `--verify`; spec mismatch raises instead of searching the wrong space |
+| **7-agent pipeline** | `src/agents/` | 21 | specialists, scribe, librarian, devil's advocate, EADE, report, stage-2 verifier — all reached on a real case |
 
-**Total: 425 tests passing.**
+**Total: 442 tests passing.**
 
 ```bash
-pytest tests -q                        # 425 passed, 3 skipped
+pytest tests -q                        # 442 passed, 3 skipped
 pytest tests -q -m "not integration"   # skip the ones needing real weights
 ```
 
@@ -119,7 +121,8 @@ and 11 class probabilities, which is exactly what the decision engine consumes.
 | Baselines B4, B6–B9 | after native training | [05](05_experimental_protocol.md) §3 |
 | Group-conditional fairness results | needs the trained heads (skin tone is in hand) | [04](04_methods.md) §5 |
 | Guarantee-violation under shift | needs both datasets trained | [05](05_experimental_protocol.md) §7 |
-| Retrieval channel | low priority; explanation only | — |
+| Rebuild the RAG index on MILK10k | after training (current index is PAD-UFES-20) | [10](10_retrieval.md) §7 |
+| Persist the train-fitted metadata preprocessor | would make the stronger 2930-d index runtime-queryable (agreement 0.875 vs 0.500) | [10](10_retrieval.md) §2 |
 
 ---
 

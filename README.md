@@ -108,12 +108,14 @@ conformal set     expected loss          LTT λ̂
 
 | | |
 |---|---|
-| Evidential + DS, conformal, LTT, three-action policy, AUGRC/AE | ✅ implemented, **425 tests** |
+| Evidential + DS, conformal, LTT, three-action policy, AUGRC/AE | ✅ implemented, **442 tests** |
 | End-to-end calibrate + evaluate | ✅ `scripts/run_eade.py` |
 | Reproducible features | ✅ verifies at cosine 1.000000 |
 | Honest baselines, 3 seeds | ✅ `scripts/baseline_probe.py` |
 | DERMA-STRESS, 18 conditions | ✅ running |
 | Orchestrator, FastAPI, 2 Streamlit apps | ✅ EADE or legacy ladder behind a flag |
+| **RAG similar-case retrieval** | ✅ built, wired in, leak-guarded — [docs/10_retrieval.md](docs/10_retrieval.md) |
+| **7-agent pipeline** | ✅ specialists · scribe · librarian · devil's advocate · EADE · report · verifier |
 | MILK10k migration · native evidential heads · DermLIP encoder | ⬜ **[docs/06_training_guide.md](docs/06_training_guide.md)** |
 | Original checkpoint metrics | ❌ invalid — [docs/evaluation_integrity.md](docs/evaluation_integrity.md) |
 
@@ -131,6 +133,30 @@ near-useless text channel. That gap is the motivation for the whole design.
 
 ---
 
+## Retrieval, and why it cannot touch the decision
+
+Similar-case retrieval is **explanation only**. That is a requirement, not caution:
+conformal prediction and Learn-then-Test both assume exchangeability, and a corpus that
+varies at inference time forfeits the risk bound. So the index is built from the
+**training split only**, the excluded patients are written to an audit file, and
+`--verify` asserts no calibration or test case can be retrieved.
+
+The leak this blocks would be invisible otherwise — a test-split neighbour carries its
+true label into the **prose**, where no metric would ever show it.
+
+```bash
+python scripts/build_rag_index.py --verify
+# 1403 training cases indexed (895 calibration/test cases EXCLUDED)
+# no calibration/test patient indexed : ok
+```
+
+Honest cost: the runtime-queryable index drops metadata, because the preprocessor emits
+116 columns at runtime but 114 fitted on train only. That lowers neighbour agreement from
+**0.875 to 0.500** — metadata carries much of the retrieval signal. Recorded rather than
+hidden; [docs/10_retrieval.md](docs/10_retrieval.md) has the fix.
+
+---
+
 ## Quickstart
 
 ```bash
@@ -140,13 +166,14 @@ pip install -e ".[dev]"
 
 ```bash
 python scripts/milk10k_audit.py                                           # audit the primary dataset
+python scripts/build_rag_index.py --verify                                # retrieval index + leak check
 python scripts/build_features.py --fit-metadata-on-train
 python scripts/build_features.py --verify data/processed/features_v2.pt   # cosine 1.000000
 python scripts/baseline_probe.py --seeds 42 7 2026
 python scripts/run_eade.py --alpha 0.05 --delta 0.10
 python scripts/run_stress.py --limit 50
 python scripts/demo.py
-pytest tests -q                                                           # 425 passed, 3 skipped
+pytest tests -q                                                           # 442 passed, 3 skipped
 ```
 
 MILK10k is expected at `./milk10k` (gitignored; CC-BY-NC, so never committed or
@@ -196,7 +223,9 @@ Start with **[docs/00_index.md](docs/00_index.md)**.
 [Research design](docs/02_research_design.md) · [Architecture](docs/03_architecture.md) ·
 [Methods](docs/04_methods.md) · [Protocol](docs/05_experimental_protocol.md) ·
 [Training](docs/06_training_guide.md) · [Literature](docs/07_literature.md) ·
-[Status](docs/08_implementation_status.md) · [prereg.yaml](docs/prereg.yaml)
+[Status](docs/08_implementation_status.md) ·
+**[What you need to do](docs/09_what_you_need_to_do.md)** ·
+[Retrieval & agents](docs/10_retrieval.md) · [prereg.yaml](docs/prereg.yaml)
 
 ---
 

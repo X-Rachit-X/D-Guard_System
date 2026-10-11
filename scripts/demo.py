@@ -46,6 +46,17 @@ def show(result, indent="") -> None:
     if result.specialist_votes:
         print(f"{indent}votes       : {result.specialist_votes}")
     print(f"{indent}evidence    : used={result.evidence_used} missing={result.evidence_missing}")
+    if result.similar_cases:
+        # Explanation only: these never enter the decision.
+        top = ", ".join(f"{c.get('diagnosis')}@{c.get('distance', 0):.3f}"
+                        for c in result.similar_cases[:5])
+        agree = result.retrieval_agreement
+        print(f"{indent}retrieval   : {len(result.similar_cases)} similar cases"
+              + (f", agreement {agree:.3f}" if agree is not None else ""))
+        print(f"{indent}              {top}")
+    else:
+        print(f"{indent}retrieval   : none "
+              f"(build an index: python scripts/build_rag_index.py --verify)")
     print(f"{indent}elapsed     : {result.processing_time_s:.2f}s")
 
 

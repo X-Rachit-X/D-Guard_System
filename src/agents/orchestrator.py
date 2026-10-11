@@ -99,6 +99,12 @@ class PipelineResult:
     #: error?" measurable instead of assumed - see src/stress/benchmark.py.
     fused_diagnosis: Optional[int] = None
     fused_confidence: Optional[float] = None
+    #: Similar prior cases shown to the report generator, and the fraction of
+    #: them sharing the issued diagnosis. EXPLANATION ONLY - neither value
+    #: enters the decision, and both are surfaced so a reader can audit what
+    #: the narrative was allowed to draw on.
+    similar_cases: List[Dict] = field(default_factory=list)
+    retrieval_agreement: Optional[float] = None
     evidence_trace: List[Dict] = field(default_factory=list)
     processing_time_s: float = 0.0
     model_version: Optional[str] = None
@@ -113,6 +119,8 @@ class PipelineResult:
             "consensus_level": self.consensus_level,
             "report": self.report,
             "evidence_used": self.evidence_used,
+            "similar_cases": self.similar_cases,
+            "retrieval_agreement": self.retrieval_agreement,
             "evidence_missing": self.evidence_missing,
             "fusion_weights": self.fusion_weights,
             "specialist_votes": self.specialist_votes,
@@ -151,6 +159,19 @@ def _consensus_from_assessment(assessment, class_names) -> ConsensusResult:
 # ---------------------------------------------------------------------------
 # OrchestratorAgent
 # ---------------------------------------------------------------------------
+
+def _retrieval_agreement(knowledge, diagnosis):
+    """Fraction of retrieved neighbours sharing `diagnosis`.
+
+    Returns None when there was no retrieval or no diagnosis, so "not measured"
+    is distinguishable from "measured as zero agreement".
+    """
+    cases = (knowledge or {}).get("similar_cases") or []
+    if not cases or diagnosis is None:
+        return None
+    from src.retrieval.rag_index import proportion_sharing_predicted_diagnosis
+    return round(proportion_sharing_predicted_diagnosis(cases, int(diagnosis)), 4)
+
 
 class OrchestratorAgent:
     """Central coordinator for the DERMA-GUARD v4.0 pipeline."""
@@ -195,6 +216,7 @@ class OrchestratorAgent:
     # ------------------------------------------------------------------
     @classmethod
     def build(cls, llm_client=None, weights_dir=None, use_eade: bool = True,
+              rag_index_path: str | None = "outputs/rag/index_train",
               **kwargs) -> "OrchestratorAgent":
         """Assemble a fully-wired orchestrator against the trained artifacts."""
         from src.agents.devils_advocate import DevilsAdvocateAgent
@@ -207,11 +229,25 @@ class OrchestratorAgent:
         if use_eade:
             from src.agents.eade import EvidenceAdaptiveEngine
             eade = EvidenceAdaptiveEngine(mode="bridge")
+
+        # Similar-case retrieval, attached only if an index has actually been
+        # built. It stays None otherwise rather than installing an agent that
+        # answers "index not loaded" on every case, which is what used to
+        # happen. Build one with: python scripts/build_rag_index.py --verify
+        librarian = kwargs.pop("librarian", None)
+        if librarian is None and rag_index_path is not None:
+            from pathlib import Path as _Path
+
+            from src.agents.librarian import LibrarianAgent
+            if _Path(str(rag_index_path)).with_suffix(".index").exists():
+                librarian = LibrarianAgent(index_path=str(rag_index_path))
+
         return cls(
             backends=backends,
             vision_team=SpecialistTeam(backends=backends).load(),
             scribe=ScribeAgent(llm_client=llm_client, backends=backends),
             devils_advocate=DevilsAdvocateAgent(),
+            librarian=librarian,
             llm_client=llm_client,
             eade=eade,
             **kwargs,
@@ -366,6 +402,20 @@ class OrchestratorAgent:
             evidence_missing=evidence_profile.missing_modalities,
             fusion_weights=fusion_result.weight_dict(),
             specialist_votes=votes,
+            # Retrieval is surfaced on every exit path, including ACQUIRE and
+            # ESCALATE, so an auditor can see what the narrative drew on even
+            # when no diagnosis was issued. Trimmed: the full narratives are
+            # large and the index metadata already holds them.
+            similar_cases=[
+                {k: v for k, v in c.items() if k != "narrative"}
+                for c in (knowledge or {}).get("similar_cases", [])
+            ],
+            # Recomputed HERE, not in the Librarian. The Librarian runs before
+            # consensus, so at retrieval time there is no diagnosis to agree
+            # with and its own agreement_rate is structurally 0.0. Computing it
+            # once the diagnosis exists is the only way the number means
+            # anything.
+            retrieval_agreement=_retrieval_agreement(knowledge, fusion_result.diagnosis),
             evidence_trace=trace,
             model_version=self.model_version,
         )
@@ -475,10 +525,22 @@ class OrchestratorAgent:
         return self.scribe.process_case(text=case.text or "", metadata=case.metadata)
 
     def _call_librarian(self, vision_report, scribe_report):
+        """Query the similar-case index.
+
+        Uses the RAW pre-projection features, which is the space
+        scripts/build_rag_index.py indexes. The projected 256-d embeddings would
+        be the wrong width and FAISS would reject them - which is the failure we
+        want, rather than a silent nearest-neighbour lookup in the wrong space.
+
+        Metadata is deliberately absent from the key: the preprocessor emits 116
+        columns at runtime but 114 when fitted on the training split only, so it
+        cannot be part of a runtime-queryable index. See SPECS in
+        scripts/build_rag_index.py.
+        """
+        emb = vision_report.model_embeddings
         return self.librarian.retrieve({
-            "clinical_embedding": vision_report.model_embeddings.get("clinical_image"),
-            "metadata_embedding": vision_report.model_embeddings.get("metadata"),
-            "text_embedding": vision_report.model_embeddings.get("text"),
+            "clinical_embedding": emb.get("clinical_image_raw"),
+            "text_embedding": emb.get("text_raw"),
         })
 
     def _call_evidence_profiler(self, case: PatientCase, vision_report, scribe_report):

@@ -233,6 +233,15 @@ class SpecialistTeam(nn.Module):
             model_embeddings["metadata"] = enc.metadata.squeeze(0).detach().cpu()
         if enc.text is not None:
             model_embeddings["text"] = enc.text.squeeze(0).detach().cpu()
+        # Raw pre-projection features are carried too, because the retrieval
+        # index is built over THOSE (2048-d ResNet50, 768-d BERT [CLS]) rather
+        # than the 256-d projections: the raw features are the ones that
+        # reproduce bit-for-bit from scripts/build_features.py, while the legacy
+        # projectors do not (docs/evaluation_integrity.md).
+        if getattr(enc, "image_raw", None) is not None:
+            model_embeddings["clinical_image_raw"] = enc.image_raw.squeeze(0).detach().cpu()
+        if getattr(enc, "text_raw", None) is not None:
+            model_embeddings["text_raw"] = enc.text_raw.squeeze(0).detach().cpu()
 
         return SpecialistReport(
             model_predictions=model_predictions,

@@ -122,7 +122,65 @@ separately, and `tests/test_milk10k.py` asserts the 11 names are in the sorted o
 official one-hot columns use — because a transposed label map is exactly how four of six
 PAD-UFES classes were once silently mislabelled.
 
-## 13. Still unknown
+## 13. The retrieval component was written, unit-tested, and never connected
+
+`RAGIndex` and `LibrarianAgent` were both implemented, `faiss` was installed, and 22 tests
+passed. The retrieval channel was nonetheless **completely inert in the running system**,
+for four independent reasons:
+
+1. **Nothing ever built an index.** No script in `scripts/` referenced `RAGIndex`, so the
+   Librarian returned `{"similar_cases": [], "note": "RAG index not loaded"}` on every
+   real case.
+2. `OrchestratorAgent.build()` never constructed a Librarian, so even a built index would
+   not have been attached.
+3. The call site passed the **256-d projected** embeddings where the index needed the raw
+   2048-d and 768-d features.
+4. `knowledge` reached the report generator and was then dropped — `PipelineResult` had no
+   field for it, so an explanation-only channel could not be audited.
+
+The tests passed throughout, because they exercised `RAGIndex` directly with synthetic
+cases. **A green suite over an unreachable code path.** This is the same shape as the dead
+fusion path in `evaluation_integrity.md`: the unit was correct, the wiring was absent, and
+nothing in the test suite could tell the difference. The lesson that generalises is that a
+component needs at least one test that reaches it *through the pipeline*, not only
+directly.
+
+All four are fixed, with 17 new tests, and `demo.py` now prints the retrieved neighbours.
+
+## 14. The runtime retrieval index is the weaker one
+
+The metadata preprocessor emits **116** columns fitted on the full CSV but **114** fitted
+on the training split only — two one-hot columns for categories absent from the training
+subset. The live pipeline emits 116, so a 114-wide index cannot be queried in production
+and padding it would misalign every subsequent column.
+
+Measured on the same query case:
+
+| index | neighbour agreement |
+|---|---|
+| image + text + metadata (2930-d) | **0.875** |
+| image + text (2816-d, runtime-queryable) | **0.500** |
+
+So the index the system can actually use retrieves **substantially worse** neighbours.
+Metadata carries much of the retrieval signal, which is consistent with it being the
+strongest single modality (0.648 vs 0.477 macro-F1 for images). Reported because the
+convenient framing — "retrieval works" — would hide a factor-of-almost-two drop in the
+only quality signal available. The fix is to persist the train-fitted preprocessor; it is
+not done.
+
+## 15. An agreement metric that could only ever read zero
+
+`LibrarianAgent.retrieve` computes `agreement_rate` against `predicted_diagnosis`, but the
+Librarian runs at pipeline step 3 and the diagnosis does not exist until step 4. It was
+therefore always called with `None`, and the rate was **structurally 0.0 on every case**.
+The first live run printed `agreement 0.000`, which reads as "retrieval finds nothing
+useful" and actually meant "this number cannot be computed here".
+
+Now computed after consensus, and `None` (not measured) is kept distinct from `0.0`
+(measured, nothing agreed). Same family as the `recovery_rate` defect in §5: a metric
+whose value is determined by where it is called rather than by the system's behaviour.
+
+## 16. Still unknown
 
 Not yet answerable, and marked as such rather than guessed:
 
