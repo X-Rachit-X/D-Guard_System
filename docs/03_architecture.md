@@ -1,209 +1,167 @@
 # Architecture
 
-Two architectures are documented here: what exists now (and which parts of it are being
-kept), and the proposed target. The point of showing both is that the migration is
-incremental — most of the engineering survives; the evidence layer is what changes.
+---
+
+## 1. Decision path
+
+```
+                    clinical image   dermoscopy   metadata   text
+                          │              │           │         │
+                    ┌─────▼──────┐  ┌────▼─────┐ ┌───▼───┐ ┌──▼────┐
+                    │ DermLIP /  │  │  same    │ │  MLP  │ │ BERT  │
+                    │ ResNet50   │  │ encoder  │ │(train-│ │ [CLS] │
+                    └─────┬──────┘  └────┬─────┘ │  fit) │ └──┬────┘
+                          │              │       └───┬───┘    │
+                    EvidentialHead  EvidentialHead   │   EvidentialHead
+                     softplus→Dir   softplus→Dir  Evid.Head  softplus→Dir
+                          │              │           │         │
+                    (b,u)_clin     (b,u)_dermo  (b,u)_meta (b,u)_text
+                          │              │           │         │
+                          │         [ABSENT → vacuous (b=0,u=1) = IDENTITY]
+                          └──────────────┴─────┬─────┴─────────┘
+                                               │
+                              ╔════════════════▼═════════════════╗
+                              ║  Dempster–Shafer fold  (⊕)       ║
+                              ║  associative · order-free        ║
+                              ║  → belief b, ignorance u,        ║
+                              ║    conflict C                    ║
+                              ╚════════════════╤═════════════════╝
+                                               │
+                                    p = b + u/K   (pignistic)
+                                               │
+        ┌──────────────────────────────────────┼──────────────────────────────┐
+        │                                      │                              │
+  conformal set                        expected loss                   LTT λ̂
+  (APS/RAPS,                   R_proceed / R_acquire / R_defer      P(R≤α)≥1−δ
+   class-conditional)          under the cost matrix
+        │                                      │                              │
+        └──────────────────────────────────────┼──────────────────────────────┘
+                                               │
+                         ┌─────────────────────┼─────────────────────┐
+                    PROCEED(ŷ)          ACQUIRE(dermoscopy)      DEFER(reason)
+                                                                 CONFLICT
+                                                                 AMBIGUOUS_SET
+                                                                 RISK_BOUND
+                                                                 COST
+```
+
+Three gates on PROCEED, each able only to increase caution. **Conflict short-circuits
+ACQUIRE** — a contradiction between existing sources is not resolved by collecting more.
 
 ---
 
-## 1. Current architecture (as built)
+## 2. Platform
+
+Modular monolith plus one background worker. No microservices, no Kafka, no Kubernetes.
 
 ```
-                              PatientCase
-                   (clinical image | metadata dict | free text)
-                                    │
-                        ┌───────────┴────────────┐
-                        │   TrainedBackends      │   encode once, share everywhere
-                        │  ResNet50→img_proj→256 │
-                        │  BERT [CLS]→text_proj→256
-                        │  MetadataPreprocessor→116
-                        └───────────┬────────────┘
-                                    │
-          ┌─────────────┬───────────┼───────────┬──────────────┐
-          │             │           │           │              │
-    SpecialistTeam  ScribeAgent  Librarian  DevilsAdvocate  (LLM client)
-    routes to A–G   PTIS,        FAISS kNN  Q, R, U, C, M,
-    by availability symptoms                 Mahalanobis OOD
-          │             │           │           │
-          └─────────────┴───────────┴───────────┘
-                                    │
-                            Stage-1 verification
-                          (OOD / conflict / no-evidence gate)
-                                    │
-                      DiagnosisAdaptiveFusion  (4 modalities)
-                   w ∝ softmax(log(Q·R·U)) ⊙ mask, renormalised
-                   q ∝ ∏ₘ pₘ^{wₘ}  (log-opinion pool over A/B/C)
-                        3 EM-ish iterations, Δw < 0.05
-                                    │
-                        ConsensusHierarchy (4 levels)
-              L1 ACCEPT · L2 ARBITRATE · L3 ACQUIRE · L4 ESCALATE
-                                    │
-                    ┌───────────────┼───────────────┐
-            AcquisitionPolicy   report_gen     Stage-2 verification
-            (Δuncertainty/cost)  (LLM or        (5 rules + LLM,
-                                 deterministic)  conservative retry)
+  intake ──► validate ──► store asset ──► enqueue job
+                                             │
+                      ┌──────────────────────┼──────────────────────┐
+              vision encoders         consistency module      evidence manager
+              (+ evidential heads)    (DS conflict C)         (versioned record)
+                      └──────────────────────┼──────────────────────┘
+                                             ▼
+                                    EADE (src/agents/eade.py)
+                                             ▼
+                        PROCEED | ACQUIRE | DEFER  + reason codes
+                                             ▼
+                     append-only assessment + audit event ──► UI / API
 ```
 
-**Specialists A–G** — each is routed in only if its modalities are present:
+| Layer | Choice |
+|---|---|
+| API | FastAPI + Pydantic (`src/main.py`) |
+| UI | Streamlit now; Next.js optional later |
+| DB | PostgreSQL (+ pgvector if retrieval is enabled) |
+| Jobs | Redis + RQ, one queue |
+| ML | PyTorch, torchvision, timm, scikit-learn |
+| Conformal / risk | in-house (`src/calibration/`), ~400 lines, easier to explain than a dependency |
+| Trees | LightGBM / sklearn GBM (acquisition estimator) |
+| Experiments | YAML configs + JSON logs |
 
-| | modalities | architecture |
-|---|---|---|
-| A | image | ResNet50 + channel attention + MHSA ViT |
-| B | metadata | residual MetaBlock-style MLP |
-| C | text | Bio_ClinicalBERT |
-| D/E/F | pairs | gated fusion (`AdaptiveGatedFusion`) |
-| G | all three | gated fusion |
+Cut from the v2 plan: OpenTelemetry/Grafana, Qdrant (pgvector instead), frontend
+overview/evidence-source/admin pages. The research core is roughly 20% of the original
+engineering list; evaluation quality comes before features.
 
-### What is kept
+---
+
+## 3. Persistence
+
+Every assessment links to the exact evidence snapshot, model versions, calibration
+version, cost-matrix version and policy version that produced it. Append-only — prior
+assessments are never overwritten.
+
+| Table | Key fields |
+|---|---|
+| `PatientCase` | id, status, created_by, access_metadata |
+| `EvidenceAsset` | case_id, asset_type, storage_key, content_hash, quality_scores |
+| `EvidenceSnapshot` | case_id, asset_ids[], missingness_record |
+| `Assessment` | snapshot_id, policy_version, calibration_version, cost_matrix_version, `lambda_hat`, action, reason_codes[], conformal_set, expected_losses{} |
+| `ModelRun` | model_name/version, preprocessing_version, evidence, `u`, `C`, ood_score, runtime |
+| `ReviewDecision` | reviewer_id, decision, rationale |
+| `AuditEvent` | actor_type, actor_id, event_type, payload |
+| `ExperimentRun` | dataset_version, split_version, stress_config, config_hash, seed, metrics |
+
+---
+
+## 4. What is kept from the earlier system
 
 | Component | Why |
 |---|---|
-| `TrainedBackends` encode-once seam | Clean separation between artifacts and logic; the stress benchmark depends on it |
-| Specialist routing by availability | Correct and useful; becomes the baseline ladder |
-| `src/constants.py` single source of truth | What stops the axis-length and class-ordering bugs recurring |
-| Stage-1 / Stage-2 verification | Good engineering for report safety |
-| Acquisition policy | The "what to collect next" surface is genuinely useful |
-| DERMA-STRESS | A real contribution |
+| `TrainedBackends` encode-once seam | clean artifact/logic separation; the stress benchmark depends on it |
+| Specialist routing by availability | correct and useful; becomes the baseline ladder |
+| `src/constants.py` single source of truth | stops the axis-length and class-ordering bugs recurring |
+| Stage-1 / Stage-2 report verification | good engineering for report safety |
+| DERMA-STRESS | a genuine contribution |
 | Orchestrator + explicit failure policy | `action="ERROR"` naming the stage, never a fabricated prediction |
-| FastAPI + Streamlit | Product surface |
+| Legacy 4-level ladder | **kept behind `use_eade=False`** — "heuristic ladder vs calibrated rule" is one of the results |
+| FastAPI + Streamlit | product surface |
 
-### What is replaced
+## 5. What was replaced
 
-| Component | Replaced by | Reason |
-|---|---|---|
-| `Q`, `R`, `U` hand-tuned formulas | Dirichlet ignorance `u_m` | Coefficients were invented; four of these quantities came from untrained MLPs |
-| mask + renormalise | vacuous opinion ⊕ DS identity | Masking is not marginalisation |
-| `1 − mean JS` consistency | DS conflict mass `C` | JS cannot separate conflict from shared ignorance |
-| `WeightLogitNetwork` | closed-form `w` | Removes the last untrained network from the safety path |
-| 4-level ladder, thresholds 0.80/0.50/0.30 | conformal risk control + Chow rule | No guarantee → distribution-free guarantee |
-| hard MAP diagnosis prior | soft expectation over `q` | Restores monotone convergence |
+| Was | Now |
+|---|---|
+| `Q`, `R`, `U` hand-tuned formulas | Dirichlet ignorance `u_m` |
+| mask + renormalise | vacuous opinion ⊕ DS identity |
+| `1 − mean JS` consistency | DS conflict mass `C` |
+| `WeightLogitNetwork` (untrained) | closed-form DS fold |
+| 4-level ladder (0.80/0.50/0.30) | expected loss + LTT `λ̂` + 3 gates |
+| AURC | AUGRC |
+| 3-seed ensemble | single-pass EDL |
 
----
-
-## 2. Target architecture (D-GUARD v5, "evidential")
-
-```
-                              PatientCase
-                                    │
-                        ┌───────────┴────────────┐
-                        │   TrainedBackends      │   (unchanged)
-                        └───────────┬────────────┘
-                                    │
-        ┌───────────────────┬───────┴───────┬───────────────────┐
-        │                   │               │                   │
-   image encoder      metadata encoder   text encoder      [absent modality]
-  (FINE-TUNED)        (MLP, train-fit)  (BERT [CLS])            │
-        │                   │               │                   │
-   EvidentialHead      EvidentialHead   EvidentialHead      vacuous opinion
-   softplus → Dir(α)   softplus → Dir(α) softplus → Dir(α)   b=0, u=1
-        │                   │               │                   │
-    (b_img, u_img)     (b_meta, u_meta) (b_text, u_text)    (identity)
-        └───────────────────┴───────┬───────┴───────────────────┘
-                                    │
-                    ╔═══════════════▼════════════════╗
-                    ║  Dempster–Shafer fold  (⊕)     ║  associative, order-free
-                    ║  → belief b, ignorance u,      ║  absent modality = identity
-                    ║    conflict mass C             ║
-                    ╚═══════════════╤════════════════╝
-                                    │
-                    ╔═══════════════▼════════════════╗
-                    ║  EM refinement (monotone in J) ║  E: q ∝ exp(Σ wₘ log pₘ + β…)
-                    ║  diagnosis-adaptive prior W    ║  M: wₘ ∝ exp(λ·E_q[log pₘ]…)
-                    ╚═══════════════╤════════════════╝
-                                    │
-                    ╔═══════════════▼════════════════╗
-                    ║  Risk-controlled deferral      ║
-                    ║  λ̂ from Learn-then-Test,       ║  P(R(λ̂) ≤ α) ≥ 1−δ
-                    ║  class-conditional (Mondrian)  ║
-                    ║  + Chow rule on cost matrix    ║
-                    ╚═══════════════╤════════════════╝
-                                    │
-              ┌─────────────────────┼─────────────────────┐
-         predict ŷ            defer: CONFLICT        defer: IGNORANCE
-                              (→ human review)       (→ acquire evidence)
-                                                     defer: COST
-                                                     (→ escalate by risk)
-                                    │
-                      report_gen + Stage-2 verification  (unchanged)
-```
-
-### The three structural changes
-
-**1. Evidence is produced, not computed from heuristics.** Each encoder emits
-non-negative evidence; belief and ignorance follow from the Dirichlet. No formula with
-hand-chosen coefficients remains.
-
-**2. Absence is algebraic.** The vacuous opinion `(b=0, u=1)` is the identity element of
-`⊕`, so a missing modality literally changes nothing. This deletes the mask vector, the
-renormalisation step, and the all-missing zero-division guard — roughly 40 lines of
-special-casing replaced by an associative fold.
-
-**3. Deferral is calibrated, and the reasons are distinct.** One threshold, fitted to
-achieve a stated risk level with high probability, plus three *separable* deferral
-causes. The current ladder gives four levels whose meanings overlap; conflict, ignorance
-and cost call for different clinical responses and should not share a code path.
-
----
-
-## 3. Migration path
-
-Incremental, each step independently testable. Nothing below requires discarding the
-current system.
-
-| Step | Change | Touches | Risk |
-|---|---|---|---|
-| 1 | Reproducible features + manifest | `scripts/build_features.py` | **Done** |
-| 2 | Honest baselines | `scripts/baseline_probe.py` | **Done** |
-| 3 | Fine-tune image encoder on GPU | `notebooks/kaggle_train_dguard.py` | Low — isolated |
-| 4 | Add `EvidentialHead` beside existing heads | new module | Low — additive |
-| 5 | Add `ds_combine` as an alternative fusion op | `src/fusion/` | Low — selected by config |
-| 6 | Soft diagnosis prior in the EM loop | `adaptive_fusion.py` | Low — small edit, §4.3 of maths doc |
-| 7 | Conformal calibration on saved predictions | new script | Low — pure post-processing |
-| 8 | Swap the ladder for the calibrated rule | `consensus.py` | Medium — keep the ladder behind a flag for comparison |
-| 9 | Re-run DERMA-STRESS on both | `scripts/run_stress.py` | Low |
-
-Keeping the ladder behind a config flag matters: the comparison *heuristic ladder vs
-calibrated rule* is one of the results (**H3**), so the old path must stay runnable.
-
----
-
-## 4. Data flow and shapes
-
-```
-image   (PIL) → Resize(224,224) → ToTensor → ImageNet-norm → (1,3,224,224)
-              → backbone → (1,2048) → img_proj → (1,256) → head → α_img (1,6)
-
-metadata(dict)→ engineer() → impute → scale ⊕ one-hot → (1,114)
-              → meta_proj → (1,256) → head → α_meta (1,6)
-
-text    (str) → tokenizer(max_len=128) → BERT → [CLS] (1,768)
-              → text_proj → (1,256) → head → α_text (1,6)
-
-fuse:   (b,u)_img ⊕ (b,u)_meta ⊕ (b,u)_text → b (1,6), u (1,1), C (1,1)
-        q = b + u/6
-```
-
-Two shape facts worth writing down, because both have already caused bugs:
-
-- **Metadata is 114-d when the preprocessor is fitted on train only**, not 116. Two
-  one-hot levels do not occur in the training split. This is correct behaviour, and
-  specialists must be constructed with the matching `meta_input_dim`.
-- **`[CLS]`, not mean-pooling.** The trained text projector was fitted on `[CLS]`;
-  mean-pooled vectors put it off-distribution. This deviates from `proj.md` Part 3 and
-  the deviation is deliberate.
-
----
-
-## 5. Components explicitly dropped from the v4 specification
+## 6. Dropped from the v4 specification
 
 | Dropped | Reason |
 |---|---|
-| Derm7pt dataset | Needs dermoscopy, which PAD-UFES lacks; the two never shared a pipeline. One dataset done rigorously beats two done partially |
-| ~~DermLIP-PanDerm, PanDerm~~ — **RETAINED as the image encoder** | **Correction:** weights are published (Nature Medicine 2025; HF `redlessone/DermLIP_PanDerm-base-w-PubMed-256`). The repo is *gated*, which is why the old code fell back silently. A dermatology foundation model is the obvious fix for the 0.477 image macro-F1 — see [09](09_literature_and_benchmarks.md) §4 |
-| Swin-Tiny ×2, ResNet152 | CPU-only environment; untrained heads. Superseded by one fine-tuned backbone |
-| LLM orchestration as a *scientific* claim | Kept as engineering. Attributing diagnostic credit to the LLM would be unsupportable — it writes reports, it does not diagnose |
-| Conformal prediction *as originally dropped* | **Reinstated**, upgraded to conformal risk control |
+| Derm7pt as primary | MILK10k is ~5× larger, paired, and 96% histopath-confirmed |
+| 5-model foundation-model ensemble | CPU-only environment; shipped with random heads voting on noise |
+| Iterative diagnosis-adaptive fusion | derivation attached to a question nobody asked |
+| LLM orchestration as a *scientific* claim | kept as engineering; it writes reports, it does not diagnose |
+| RAG in the decision path | kept as an explanation feature only — admitting a live corpus breaks exchangeability and forfeits the risk guarantee |
 
-The v4 spec's instincts were right and its scope was not. The target architecture keeps
-every idea that had a defensible mechanism and discards the ones that existed only as
-configuration files.
+**Reinstated:** conformal prediction (v1 had it, v4 dropped it), now as conformal sets
+plus LTT risk control; and **MetaBlock** as the literature baseline.
+
+---
+
+## 7. Shapes
+
+```
+clinical  (PIL) → Resize(224,224) → ToTensor → ImageNet-norm → (1,3,224,224)
+                → encoder → (1,D) → proj → (1,256) → EvidentialHead → α (1,K)
+dermoscopy      → same encoder (separate head)
+metadata (dict) → engineer → impute → scale ⊕ one-hot → (1,M) → (1,256) → α
+text     (str)  → tokenizer(128) → BERT → [CLS] (1,768) → (1,256) → α
+
+fold: (b,u)_clin ⊕ (b,u)_dermo ⊕ (b,u)_meta ⊕ (b,u)_text → b (1,K), u (1,1), C (1,1)
+```
+
+Two facts that have each already caused a bug:
+
+- **Metadata width depends on where the preprocessor was fitted.** Train-only fitting
+  gives 114 dims on PAD-UFES-20, not 116, because two one-hot levels are absent from
+  train. Correct behaviour; specialists must be built with the matching
+  `meta_input_dim`.
+- **`[CLS]`, not mean-pooling.** The trained text projector was fitted on `[CLS]`;
+  mean-pooled vectors put it off-distribution. A deliberate deviation from the v4 spec.

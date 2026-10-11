@@ -48,3 +48,7 @@ events.out.tfevents.*
 .idea/
 .DS_Store
 Thumbs.db
+
+# MILK10k dataset (CC-BY-NC, 368MB) - never commit
+milk10k/
+milk10k.zip

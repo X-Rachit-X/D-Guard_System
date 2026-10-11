@@ -1,0 +1,114 @@
+# Pre-registration — commit this BEFORE the test split is touched.
+# Values below are the agreed defaults; change them only before freezing.
+
+project: D-GUARD
+version: v3.0
+frozen: false            # set true, commit, and only then run on test
+
+dataset:
+  primary: MILK10k
+  doi: "10.34970/648456"
+  licence: CC-BY-NC
+  split_unit: lesion     # MILK10k publishes no patient identifiers
+  split_version: v2-lesion-stratified-55-10-20-15
+  ratios: {train: 0.55, validation: 0.10, calibration: 0.20, test: 0.15}
+  # CHANGED from 60/15/10/15 on 2026-10-11, BEFORE the test split was touched and
+  # while frozen: false. Reason, computed on the real n=5240:
+  #   ratio 0.10 -> n_cal=524,  Hoeffding slack 0.0469 -> empirical miss must be
+  #                 under 0.31% to certify alpha=0.05.  Effectively infeasible.
+  #   ratio 0.20 -> n_cal=1048, slack 0.0331 -> empirical miss under 1.69%.
+  # The realised miss rate in the verified PAD-UFES run was 0.50%, so 0.20 is
+  # plausibly attainable and 0.10 is not. Keeping 0.10 would have guaranteed
+  # "not controlled" for a purely procedural reason rather than a scientific one.
+  # Reproduce: python scripts/milk10k_audit.py --alpha 0.05 --delta 0.10
+  stratify_by: label_name     # so MAL_OTH (9 lesions) reaches every partition
+  shift_dataset: PAD-UFES-20
+  label_scheme: [coarse_11_category, binary_malignancy]
+
+  # Measured on the extracted release 2026-10-11 (NOT quoted from the paper).
+  measured:
+    lesions: 5240
+    images: 10480
+    classes: 11
+    class_names: [AKIEC, BCC, BEN_OTH, BKL, DF, INF, MAL_OTH, MEL, NV, SCCKA, VASC]
+    malignant_classes: [AKIEC, BCC, MAL_OTH, MEL, SCCKA]
+    malignant_prevalence: 0.717      # BCC alone is 0.481 -- referral population
+    histopathology_confirmed: 0.957
+    rarest_class: {MAL_OTH: 9}
+    exact_duplicate_images: 0        # SHA-256 over all 10480 files
+    skin_tone_levels: 6              # 0-5; level 3 is 60.6% of images, level 0 has 6
+    centre_column: null              # NOT published; no centre-shift experiment possible
+
+  # Classes below ceil(1/alpha)=20 calibration lesions. Declared in advance so a
+  # withheld guarantee cannot be mistaken for a result.
+  underpowered_classes: [BEN_OTH, DF, INF, MAL_OTH, VASC]
+  underpowered_groups: [skin_tone_0]
+
+guarantee:
+  controlled_risk: malignancy_miss_rate_on_proceeded
+  alpha: 0.05            # target risk among proceeded cases
+  # MANDATORY reporting rule: at a 71.7% malignant base rate an always-malignant
+  # policy attains a 0% miss rate. The miss rate is therefore reported ONLY
+  # alongside coverage and the base rate, never as a standalone headline.
+  delta: 0.10            # failure probability over the calibration draw
+  method: learn_then_test
+  p_value: hoeffding_bentkus
+  testing: fixed_sequence
+  class_conditional: true
+  # A stratum needs ~1/alpha calibration points. Groups below that are reported
+  # as underpowered, NOT given a fabricated threshold.
+
+conformal:
+  alpha: 0.10
+  method: aps
+  class_conditional: true
+  rule: "set spanning benign AND malignant (or empty) blocks PROCEED"
+
+cost_matrix:
+  correct: 0
+  wrong_same_group: 1
+  missed_malignant: 10
+  false_alarm: 2
+acquisition_cost:
+  dermoscopy: 0.5
+defer_cost: 1.5
+max_acquisition_rounds: 1
+
+endpoints:
+  primary: coverage_at_guaranteed_risk
+  secondary:
+    - augrc                      # Traub et al. NeurIPS 2024; AURC comparability only
+    - acquisition_efficiency     # AE(r) vs oracle and random
+    - malignancy_miss_rate_on_proceeded
+    - guarantee_violation        # realised risk - alpha, per stress family
+    - net_benefit
+    - adaptive_ece
+    - classwise_ece
+    - brier_decomposition
+    - per_class_f1               # always; never macro alone
+
+sensitivity:                     # mandatory — conclusions depend on these
+  missed_malignant: [5, 10, 20]
+  dermoscopy_cost: [0.1, 0.5, 1.0]
+
+baselines: [B1, B2, B3, B4, B5, B6, B7, B8, B9_metablock]
+
+seeds: [42, 7, 2026]
+
+statistics:
+  bootstrap_resamples: 2000
+  paired: true
+  multiplicity: holm
+  report_raw_and_adjusted_p: true
+
+decision_rule_H1: >
+  Accept H1 if the EADE's malignancy miss rate at matched coverage is lower than
+  both B3 and B5 with Holm-adjusted p < 0.05 on at least two of three seeds.
+  Anything weaker is reported as "did not replicate".
+
+prohibited_claims:
+  - first
+  - state-of-the-art
+  - clinically safer
+  - guaranteed safe
+  - proven novel

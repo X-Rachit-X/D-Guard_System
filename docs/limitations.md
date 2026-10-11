@@ -1,63 +1,107 @@
-# Limitations - DERMA-GUARD v4.0
+# Limitations
 
-> **Read [evaluation_integrity.md](evaluation_integrity.md) first.** The single largest
-> limitation is not in this file: the accuracy figures shipped with the trained
-> checkpoints are artifacts of the evaluation code, not measurements. The models were
-> evaluated on a test set that was 100% training data, and the predictions were then
-> rewritten to hit hardcoded targets. No held-out evaluation of these models exists.
+Read [evaluation_integrity.md](evaluation_integrity.md) first — the single largest
+limitation is that no model metric produced before 2026-10-11 is valid.
 
+---
 
-This document lists known limitations of the DERMA-GUARD v4.0 system. These must be understood before interpreting any results.
+## 1. Data
 
-## 1. Synthetic Text ≠ Real Clinical Text (PAD-UFES-20)
+**Synthetic text.** PAD-UFES-20 narratives are template-generated from structured fields,
+not written by patients. Any claim about patient-authored text is a claim about a
+simulation. **Largest external-validity threat.** MILK10k ships no narrative at all, so
+the text modality is absent there — cleaner, but it means the tri-modal claim rests on the
+weaker dataset.
 
-PAD-UFES-20 does not include free-text clinical notes. We generate synthetic patient narratives using Qwen2.5:7B-Instruct prompted with structured metadata fields. This synthetic text:
-- Is based solely on 7 structured fields (age_bucket, body_location, grew, itch, bleed, changed, elevation)
-- Does **not** capture the nuance, ambiguity, or clinical vocabulary of real patient narratives
-- May have lower lexical diversity than real text
-- Passes a regex leakage check, but may still implicitly encode diagnosis-correlated patterns
+**No patient identifiers in MILK10k.** Splits are by lesion. If one patient contributed
+several lesions they can straddle the boundary. Residual leakage risk, stated and
+unquantifiable from the published metadata. What *was* checkable has been checked: all
+10,480 images are byte-distinct by SHA-256, so there is no exact-duplicate leakage, and
+each lesion's two images always land on the same side of every split boundary.
 
-**Implication**: Performance on text-inclusive experiments on PAD-UFES-20 is likely **overoptimistic** compared to deployment with real clinical text.
+**Rare classes.** Measured on the real release: MILK10k MAL_OTH has **9 lesions in
+total** (5 after a 60/20/20 split), and BEN_OTH 44, VASC 47, INF 50, DF 52. PAD-UFES-20
+MEL has 52 of 2298. **5 of 11 MILK10k classes cannot receive a class-conditional
+guarantee** at α=0.05 — they have fewer than ⌈1/α⌉=20 calibration points — and the
+implementation withholds a threshold for them rather than fabricating one. Per-class
+conclusions for these classes are not supportable, which is why the guarantee is stated on
+**binary malignancy**.
 
-## 2. Acquisition Policy is Simulated Only
+**Prevalence: 71.7% of MILK10k lesions are malignant, and BCC alone is 48.1%.** This is
+the single most consequential property of the dataset and it was not anticipated when the
+cost matrix was designed. It is a tertiary-referral population, not a screening one. A
+trivial always-malignant policy achieves a 0% miss rate here, so **the malignancy miss
+rate must always be reported beside coverage and beside the base rate** — alone it is
+nearly meaningless on this dataset. No screening claim is supportable, and the cost matrix
+must be re-derived before any such claim.
 
-The AcquisitionPolicy (Section 7 / Part 7) selects which additional modality to request. In DERMA-GUARD v4.0:
-- Acquisition is a **recommendation** only — no actual new data is collected
-- The uncertainty-reduction estimates are derived from held-out validation set statistics, not from real-world follow-up outcomes
-- The cost function (image > dermoscopy > question) is manually defined, not learned from clinician preferences
+**No centre-shift experiment is possible.** Corrected 2026-10-11: although the MILK10k
+study describes 5 contributing centres, the released metadata publishes **no centre
+column** — `attribution` is the single constant value "MILK study team" across all 10,480
+rows. An earlier version of these docs planned a centre-held-out experiment on that
+basis; it cannot be run. `tests/test_milk10k.py` pins the finding. Distribution shift is
+therefore measured **across datasets only** (MILK10k → PAD-UFES-20), which is a weaker
+design than planned and is reported as such. Published evidence that shift matters:
+training on PAD-UFES-20 6-class and testing on HIBA gives **46.3% balanced accuracy**,
+which those authors call no better than random guessing.
 
-**Implication**: Real-world active information gathering would require a live clinical workflow integration.
+**Label-space mismatch between the two datasets.** MILK10k has 11 classes, PAD-UFES-20
+has 6, and they do not nest cleanly. Cross-dataset transfer is therefore evaluated on
+**binary malignancy**, not on the diagnostic label — a real restriction on the shift
+analysis, not a presentational choice.
 
-## 3. Conformal Coverage Replaced by Consensus Hierarchy
+**Label uncertainty.** MILK10k is ~96% histopathology-confirmed, which mitigates but does
+not remove it. PAD-UFES-20 is 58.4% biopsy-proven overall (100% of cancers).
 
-Earlier versions of this system used conformal prediction to guarantee coverage at a specified error rate. In DERMA-GUARD v4.0, conformal prediction is **replaced** by the 4-level consensus hierarchy. This means:
-- Population-level coverage guarantees (from conformal prediction theory) **no longer apply**
-- The consensus thresholds (confidence ≥ 0.80 for ACCEPT, etc.) are heuristic and dataset-specific
-- Threshold recalibration is required for deployment on a new patient population
+## 2. Method
 
-## 4. Results are Retrospective, Not Clinically Validated
+**The guarantee assumes exchangeability.** `P(R(λ̂) <= α) >= 1 - δ` holds over the
+calibration draw when calibration and test data are exchangeable. It **does not hold under
+distribution shift.** Measuring the size of the violation under each stress family is a
+planned result, not a caveat to bury.
 
-All results in this project are computed on held-out test splits of public research datasets (PAD-UFES-20, Derm7pt). The system has:
-- **Not** been validated on prospective clinical data
-- **Not** been reviewed by board-certified dermatologists for clinical appropriateness
-- **Not** been tested on rare skin conditions, dark skin tones, or paediatric cases beyond what appears in the test sets
+**Class-conditional guarantees need data.** A stratum needs roughly `1/α` calibration
+points — 20 per class at α=0.05. Rare classes cannot reach it. The implementation reports
+`underpowered_classes` / `underpowered_groups` and withholds a threshold rather than
+fabricating one.
 
-**Do NOT use this system for any clinical decision-making.**
+**The cost matrix is a judgement.** `ℓ_miss = 10`, `ℓ_fa = 2`, `c_acq = 0.5`,
+`c_def = 1.5` are declared, not derived. The sensitivity sweep is mandatory because
+conclusions depend on them. Making them explicit is an improvement over hiding the same
+assumption inside three confidence thresholds — but it does not make them right.
 
-## 5. Single-GPU Training Constraints
+**Acquisition benefit is only directly measurable where the modality exists.** On MILK10k
+it does for every lesion, which is why that dataset was chosen. Any simulated acquisition
+must be labelled a simulation.
 
-All experiments were run on a single GPU. This imposes:
-- Batch size limited to 32 (may affect batch normalization stability)
-- No multi-GPU synchronization — batch statistics reflect single-GPU distributions
-- Training time for 5 models × 100 epochs may be prohibitive without a modern GPU (≥ 24GB VRAM)
+**Bridge mode is an approximation.** Lifting a softmax into an opinion via normalised
+entropy conflates aleatoric with epistemic uncertainty, which a trained Dirichlet head
+separates. Bridge numbers must be labelled and never presented as native results.
 
-## 6. OOD Detector Sensitivity
+**Conflict detection is calibrated, not validated.** The threshold is the validation p90
+of DS conflict mass. That it fires on genuine contradictions rather than merely on hard
+cases is an assumption still to be tested (H5).
 
-The OOD detector uses Mahalanobis distance on class-conditional training embeddings. Its performance depends on:
-- The quality and coverage of training embeddings
-- The covariance matrix inversion being numerically stable (requires pseudoinverse if rank-deficient)
-- The threshold calibrated on validation set — may not generalize to different patient populations
+## 3. Scope
 
-## 7. TTA Stability (S_m) Variance Scaling
+- No prospective or clinical validation; no clinical-utility claim.
+- No reader study comparing the deferral policy against clinicians.
+- Fairness is reported per skin tone, but no bias **mitigation** is attempted. The
+  strata are severely imbalanced (measured: tone 3 = 60.6% of images; tone 0 = 6 lesions,
+  ~1 calibration point), so tone 0 receives **no** per-group guarantee and tone 1 is
+  borderline at 24 calibration lesions against the 20 required.
+- Retrieval is explanation-only and deliberately outside the decision path: admitting a
+  live external corpus would break exchangeability and forfeit the risk guarantee.
+- The LLM writes reports; it does not diagnose, and no diagnostic credit is attributed to
+  it.
 
-The TTA stability score S_m = 1 - var(predictions under 5 augmentations) uses a heuristic scaling factor. The raw variance is typically in [0.001, 0.01] range; the multiplier of 100 maps it to a more useful [0, 1] range but is not theoretically grounded.
+## 4. Environment
+
+- Local torch is **CPU-only**, so all training is off-box; results depend on a Kaggle
+  environment not fully pinned here.
+- `torchvision.ResNet50_Weights.DEFAULT` silently moved from V1 to V2 between releases.
+  It is now pinned explicitly, because that drift is part of why the previous feature
+  cache is irreproducible.
+- DermLIP_PanDerm is **CC-BY-NC-ND**; "ND" arguably forbids fine-tuning, so linear probing
+  is the safer reading. Its pretraining corpus must be checked for overlap with our
+  evaluation datasets before any clean-probe claim.
