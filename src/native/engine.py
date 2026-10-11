@@ -80,6 +80,7 @@ class NativeResult:
     # Specialist team (src/fusion/runtime.py); empty when no team bundle exists.
     team: Dict = field(default_factory=dict)
     raw_confidence: Optional[float] = None
+    scribe: Dict = field(default_factory=dict)
     quality: Dict[str, Optional[Dict]] = field(default_factory=dict)
     similar: Dict = field(default_factory=dict)
     report: Dict = field(default_factory=dict)
@@ -103,6 +104,7 @@ class NativeResult:
             "quality": self.quality,
             "team": {k: v for k, v in (self.team or {}).items() if k != "prob"},
             "raw_confidence": self.raw_confidence,
+            "scribe": self.scribe,
             "similar": self.similar,
             "report": self.report,
         }

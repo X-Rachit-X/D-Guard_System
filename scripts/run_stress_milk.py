@@ -37,33 +37,7 @@ import numpy as np  # noqa: E402
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter  # noqa: E402
 
 
-def blur(im):
-    return im.filter(ImageFilter.GaussianBlur(4))
-
-
-def dark(im):
-    return ImageEnhance.Brightness(im).enhance(0.35)
-
-
-def noise(im, rng=np.random.default_rng(0)):
-    a = np.asarray(im, dtype=np.float32) / 255.0
-    a = np.clip(a + rng.normal(0, 0.12, a.shape), 0, 1)
-    return Image.fromarray((a * 255).astype(np.uint8))
-
-
-def jpeg(im):
-    buf = io.BytesIO()
-    im.save(buf, "JPEG", quality=8)
-    return Image.open(io.BytesIO(buf.getvalue())).convert("RGB")
-
-
-def occlusion(im):
-    im = im.copy()
-    w, h = im.size
-    s = 0.35 ** 0.5
-    ImageDraw.Draw(im).rectangle([w * (1 - s) / 2, h * (1 - s) / 2,
-                                  w * (1 + s) / 2, h * (1 + s) / 2], fill=(0, 0, 0))
-    return im
+from src.eval.corruptions import blur, dark, jpeg, noise, occlusion  # noqa: E402
 
 
 CONDITIONS = {"clean": None, "blur": blur, "dark": dark, "noise": noise,

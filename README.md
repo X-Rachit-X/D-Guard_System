@@ -39,6 +39,9 @@ patients, doctors and follow-ups around it.
 - Dermoscopy is requested selectively (acquisition efficiency **+0.33** vs −0.03 for
   "ask the most uncertain").
 - Missed-cancer bound **certified** by Learn-then-Test; confidences shown are **calibrated**.
+- **Significant** vs a confidence threshold (p < 0.001); a learned rejector is as safe (p = 0.18).
+- **Shift test** on PAD-UFES-20, unchanged: confident answers drop 60% → 16%, 0 cancers missed
+  among them — but 11-class accuracy degrades to 48%.
 
 Reported against us: always answering is cheaper on mean cost; occluded photos and missing
 details still cause confident errors; one training seed. Full results:

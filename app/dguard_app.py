@@ -1,18 +1,23 @@
 """
-app/dguard_app.py - D-GUARD care platform (patient, doctor and system views).
+app/dguard_app.py - DERMA-GUARD care platform.
 
     streamlit run app/dguard_app.py
 
-Runs the Kaggle-trained MILK10k model through the calibrated PROCEED / ACQUIRE /
-DEFER policy, and wraps it in the care workflow: intake, dermoscopy requests,
-doctor review queue, instructions, questions and follow-ups. Everything is
-stored in data/care/dguard_care.sqlite and every step is audited.
+Views
+  Patient      intake (photo, optional dermoscopy, details, symptoms), result,
+               dermoscopy requests, questions, follow-ups
+  Doctor       prioritised queue, evidence, specialist team, gatekeeper, similar
+               cases, report, verdict
+  Stress Lab   damage a real lesion's photo and watch the system respond
+  Research     every experiment result with confidence intervals
+  System       platform activity and audit log
 
 Research prototype - not clinically validated.
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 import warnings
 from pathlib import Path
@@ -28,26 +33,24 @@ from PIL import Image  # noqa: E402
 from src.care import CareService, CareStore, CaseStatus  # noqa: E402
 from src.constants import MILK_CLASS_FULL_NAMES  # noqa: E402
 
-st.set_page_config(page_title="D-GUARD", page_icon="🩺", layout="wide")
+st.set_page_config(page_title="DERMA-GUARD", page_icon="🩺", layout="wide")
 
-ACTION_STYLE = {
+STYLE = {
     "PROCEED": ("✅", "#1b7f3b", "Answered - HIGH confidence"),
     "PROCEED_LOW": ("⚠️", "#b54708", "Answered - LOW confidence, a doctor will confirm"),
-    "ACQUIRE": ("📷", "#9a6700", "More evidence needed"),
-    "DEFER": ("🧑‍⚕️", "#b42318", "Sent to a doctor"),
+    "ACQUIRE": ("📷", "#9a6700", "Dermoscopy photo requested"),
+    "DEFER": ("🧑‍⚕️", "#b42318", "Sent to a doctor - the evidence contradicts itself"),
 }
 
 
 # ------------------------------------------------------------------ backend
-@st.cache_resource(show_spinner="Loading the trained model (first time only)...")
+@st.cache_resource(show_spinner="Loading the specialist team (first time only)...")
 def backend():
     from src.agents.pipeline import DGuardPipeline
     engine = DGuardPipeline.build()
-    import os
     db = os.environ.get("DGUARD_DB", str(ROOT / "data" / "care" / "dguard_care.sqlite"))
-    svc = CareService(engine, CareStore(db),
-                      upload_dir=ROOT / "data" / "care" / "uploads")
-    samples = engine.sample_lesions("test", n=24, seed=7)
+    svc = CareService(engine, CareStore(db), upload_dir=ROOT / "data" / "care" / "uploads")
+    samples = engine.sample_lesions("test", n=30, seed=7)
     return engine, svc, samples
 
 
@@ -55,8 +58,10 @@ try:
     engine, svc, samples = backend()
 except FileNotFoundError as e:
     st.error(f"Missing artifact: {e}")
-    st.code("python scripts/milk_native_infer.py\n"
-            "python scripts/run_eade_milk.py --missed-cost 5 --out outputs/eade_milk/cost_5")
+    st.code("python scripts/milk_native_infer.py\npython scripts/build_specialists.py\n"
+            "python scripts/run_team.py\n"
+            "python scripts/run_eade_milk.py --native outputs/milk_team --missed-cost 5 "
+            "--out outputs/eade_team/cost_5")
     st.stop()
 
 store = svc.store
@@ -65,15 +70,104 @@ SITES = sorted(x for x in train["site"].dropna().unique() if x)
 GENERAL_SITES = sorted(x for x in train["anatom_site_general"].dropna().unique() if x)
 
 
-def badge(action, urgency=None, tier=None):
+def load_json(rel):
+    p = ROOT / rel
+    return json.loads(p.read_text()) if p.exists() else None
+
+
+# ------------------------------------------------------------------ widgets
+def badge(action, urgency=None, tier=None, big=True):
     key = "PROCEED_LOW" if action == "PROCEED" and tier == "LOW" else action
-    icon, colour, text = ACTION_STYLE.get(key, ("•", "#555", action))
-    urg = (f" &nbsp;<span style='background:#b42318;color:white;padding:2px 8px;"
-           f"border-radius:10px;font-size:0.8em'>URGENT</span>" if urgency == "URGENT" else "")
+    icon, colour, text = STYLE.get(key, ("•", "#555", action))
+    urg = (" &nbsp;<span style='background:#b42318;color:white;padding:2px 8px;"
+           "border-radius:10px;font-size:0.8em'>URGENT</span>" if urgency == "URGENT" else "")
+    size = "1.25em" if big else "1em"
     st.markdown(f"<div style='border-left:6px solid {colour};padding:8px 14px;"
                 f"background:rgba(0,0,0,0.03);border-radius:4px'>"
-                f"<b style='color:{colour};font-size:1.2em'>{icon} {action}</b> - {text}{urg}"
-                f"</div>", unsafe_allow_html=True)
+                f"<b style='color:{colour};font-size:{size}'>{icon} {key.replace('_', ' ')}</b>"
+                f" - {text}{urg}</div>", unsafe_allow_html=True)
+
+
+def gatekeeper(result: dict):
+    """Every safety check, pass or fired - why the case got its outcome."""
+    d = result["decision"]
+    g = d.get("gates") or {}
+    risks = d.get("risks") or {}
+    team = result.get("team") or {}
+    rows = [
+        ("Sources contradict each other?", "Dempster-Shafer conflict above the validation p90",
+         g.get("conflict", False), "DEFER"),
+        ("Cancer ruled out before saying benign?", "conformal set over benign/malignant",
+         g.get("ambiguous_set", False), "blocks HIGH"),
+        ("Certified risk threshold met?", "Learn-then-Test bound on missed cancers",
+         g.get("below_risk_threshold", False), "blocks HIGH"),
+        ("Photo quality in calibrated range?", "image-quality agent (1st-99th percentile)",
+         g.get("photo_quality", False), "blocks HIGH"),
+        ("Case similar to training data?", "Mahalanobis OOD (validation p99)",
+         g.get("out_of_distribution", False) or team.get("ood", False), "blocks HIGH"),
+        ("Answering cheaper than a review?", "expected cost of answering vs 1.5",
+         (risks.get("proceed", 0) > risks.get("defer", 9)), "blocks HIGH"),
+    ]
+    st.markdown("**Gatekeeper** - every safety check on this case")
+    for q, how, fired, effect in rows:
+        c1, c2 = st.columns([0.08, 0.92])
+        c1.markdown("⛔" if fired else "✅")
+        c2.markdown(f"**{q}** {'- FIRED, ' + effect if fired else ''}  \n"
+                    f"<span style='color:#666;font-size:0.85em'>{how}</span>",
+                    unsafe_allow_html=True)
+    if risks:
+        st.caption("Expected cost - answer: {:.2f} · doctor review: {:.2f}{}".format(
+            risks.get("proceed", 0), risks.get("defer", 0),
+            f" · dermoscopy: {risks['acquire']:.2f}" if "acquire" in risks else ""))
+
+
+def team_panel(result: dict):
+    team = result.get("team") or {}
+    if not team:
+        return
+    from src.fusion.runtime import CONSENSUS_TEXT
+    st.markdown("**Specialist team** - the Devil's Advocate's evidence profile")
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Consensus", f"Level {team.get('consensus_level', '?')}",
+              help=CONSENSUS_TEXT.get(team.get("consensus_level"), ""))
+    t2.metric("Agree", f"{team['agreeing']} / {team['n_specialists']}")
+    t3.metric("Consistency", f"{team['consistency']:.2f}",
+              help="1 - mean pairwise Jensen-Shannon divergence")
+    t4.metric("Unlike training data", "YES" if team["ood"] else "no")
+    rows = [{"specialist": n, "says": v,
+             "quality Q": team["quality"].get(n),
+             "reliability R": team["reliability"].get(n),
+             "uncertainty U": team["uncertainty"].get(n),
+             "weight": team["weights"].get(n)} for n, v in team["votes"].items()]
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    w = team.get("weights") or {}
+    if w:
+        st.bar_chart(pd.DataFrame({"fusion weight": w}), horizontal=True, height=180)
+    st.caption(f"Iterative diagnosis-adaptive fusion: {team['iterations']} refinement "
+               f"step(s). Weights are set per case by learned reliability, quality and the "
+               f"suspected diagnosis.")
+
+
+def evidence_panel(result: dict):
+    d = result["decision"]
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Confidence (calibrated)", f"{(d.get('tentative_confidence') or 0):.0%}",
+              help="Probability that the stated diagnosis is correct, calibrated on "
+                   "validation data")
+    c2.metric("P(malignant)", f"{(d.get('p_malignant') or 0):.0%}")
+    c3.metric("Ignorance u", f"{result['ignorance']:.3f}",
+              help="How much the system does NOT know (1 = nothing)")
+    c4.metric("Conflict C", f"{result['conflict']:.3f}",
+              help="How strongly the inputs contradict each other")
+    diff = d.get("differential") or []
+    if diff:
+        st.markdown("**Differential**")
+        st.bar_chart(pd.DataFrame({"probability": {
+            engine.classes[int(c)]: float(p) for c, p in diff}}), horizontal=True, height=150)
+    rel = result.get("reliability_for_tentative") or {}
+    if rel:
+        st.caption("Measured reliability of each input for this diagnosis (validation): "
+                   + ", ".join(f"{k} {v:.2f}" for k, v in rel.items() if v is not None))
 
 
 def show_images(cid):
@@ -88,71 +182,25 @@ def show_images(cid):
                 st.caption(f"{title}: not provided")
 
 
-def evidence_panel(result: dict):
-    d = result["decision"]
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("P(malignant)", f"{(d.get('p_malignant') or 0):.0%}")
-    c2.metric("Ignorance u", f"{result['ignorance']:.3f}",
-              help="How much the system does NOT know. 1.0 = no evidence at all.")
-    c3.metric("Conflict C", f"{result['conflict']:.3f}",
-              help="How strongly the sources contradict each other.")
-    c4.metric("Stage", "with dermoscopy" if result["stage"] == "B" else "photo + details")
-
-    team = result.get("team") or {}
-    if team:
-        from src.fusion.runtime import CONSENSUS_TEXT
-        st.markdown("#### Specialist team (Devil's Advocate evidence profile)")
-        t1, t2, t3, t4 = st.columns(4)
-        t1.metric("Consensus", f"Level {team.get('consensus_level', '?')}",
-                  help=CONSENSUS_TEXT.get(team.get("consensus_level"), ""))
-        t2.metric("Agreeing specialists", f"{team['agreeing']} / {team['n_specialists']}")
-        t3.metric("Consistency C", f"{team['consistency']:.2f}",
-                  help="1 - mean pairwise Jensen-Shannon divergence between specialists")
-        t4.metric("Out of distribution", "YES" if team["ood"] else "no",
-                  help="Mahalanobis distance to the nearest training class, "
-                       "beyond the validation 99th percentile")
-        rows = []
-        for name, vote in team["votes"].items():
-            rows.append({"specialist": name, "says": vote,
-                         "quality Q": team["quality"].get(name),
-                         "reliability R (learned)": team["reliability"].get(name),
-                         "uncertainty U": team["uncertainty"].get(name),
-                         "fusion weight": team["weights"].get(name)})
-        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
-        st.caption(f"Iterative diagnosis-adaptive fusion converged after "
-                   f"{team['iterations']} refinement step(s). Confidence shown is "
-                   f"calibrated: the probability the stated diagnosis is correct.")
-
-    l, r = st.columns(2)
-    with l:
-        st.markdown("**Dynamic fusion weights** - how much each specialist counted "
-                    "contributed to *this* case")
-        w = result.get("fusion_weights") or {}
-        if w:
-            st.bar_chart(pd.DataFrame({"weight": w}), horizontal=True, height=160)
-        st.markdown("**What each source says on its own**")
-        st.write(result.get("modality_votes") or {})
-    with r:
-        st.markdown("**Differential** (most likely diagnoses)")
-        diff = d.get("differential") or []
-        if diff:
-            st.bar_chart(pd.DataFrame({"probability": {
-                engine.classes[int(c)]: float(p) for c, p in diff}}),
-                horizontal=True, height=160)
-        rel = result.get("reliability_for_tentative") or {}
-        if rel:
-            st.markdown("**Measured reliability of each source for this diagnosis** "
-                        "(validation set)")
-            st.write({k: (None if v is None else round(v, 2)) for k, v in rel.items()})
-    gates = [k for k, v in (d.get("gates") or {}).items() if v]
-    st.caption("Safety gates fired: " + (", ".join(gates) if gates else "none"))
+def similar_gallery(result: dict):
+    sim = (result.get("similar") or {}).get("similar_cases") or []
+    if not sim:
+        return
+    agree = result["similar"].get("agreement")
+    st.markdown("**Similar confirmed past cases** (training lesions; context only, never "
+                "used to decide)" + (f" - {agree:.0%} share the diagnosis" if agree is not None else ""))
+    cols = st.columns(len(sim))
+    for col, c in zip(cols, sim):
+        with col:
+            if c.get("clinical_path") and Path(c["clinical_path"]).exists():
+                st.image(c["clinical_path"], width="stretch")
+            st.caption(f"**{c['diagnosis']}** · {c['similarity']:.2f}")
 
 
 def as_table(rows):
-    """DataFrame with every non-scalar cell as text, so mixed columns render cleanly."""
     df = pd.DataFrame(rows)
     for c in df.columns:
-        if df[c].map(lambda v: isinstance(v, (dict, list))).any() or df[c].dtype == object:
+        if df[c].dtype == object:
             df[c] = df[c].map(lambda v: json.dumps(v, default=str)
                               if isinstance(v, (dict, list)) else ("" if v is None else str(v)))
     return df
@@ -160,25 +208,22 @@ def as_table(rows):
 
 def messages_panel(cid, audience):
     for m in store.messages(cid):
-        who = {"system": "🤖 D-GUARD", "doctor": "🧑‍⚕️ Doctor", "patient": "🙂 Patient"}[m["sender"]]
-        if audience == "patient" and m["sender"] == "patient" and m["kind"] == "question":
-            who = "🙂 You"
+        who = {"system": "🤖 DERMA-GUARD", "doctor": "🧑‍⚕️ Doctor", "patient": "🙂 Patient"}[m["sender"]]
         with st.chat_message("assistant" if m["sender"] != "patient" else "user"):
             st.markdown(f"**{who}** · _{m['kind']}_ · {m['created_at'][:16].replace('T', ' ')}")
             st.write(m["body"])
 
 
 # ------------------------------------------------------------------ sidebar
-st.sidebar.title("🩺 D-GUARD")
-st.sidebar.caption("Risk-controlled, cost-aware evidence acquisition and deferral "
-                   "for multimodal dermatology AI")
-role = st.sidebar.radio("View as", ["Patient", "Doctor", "System"], index=0)
+st.sidebar.title("🩺 DERMA-GUARD")
+st.sidebar.caption("Evidence-aware specialist consensus with risk-controlled acquisition "
+                   "and deferral")
+role = st.sidebar.radio("View", ["Patient", "Doctor", "Stress Lab", "Research", "System"])
 st.sidebar.divider()
-s = store.stats()
-st.sidebar.metric("Cases", s["cases"])
-st.sidebar.metric("Waiting for a doctor", s["by_status"].get(CaseStatus.AWAITING_DOCTOR, 0))
-st.sidebar.caption("Research prototype - not clinically validated. "
-                   "Do not use for diagnosis.")
+s_ = store.stats()
+st.sidebar.metric("Cases", s_["cases"])
+st.sidebar.metric("Waiting for a doctor", s_["by_status"].get(CaseStatus.AWAITING_DOCTOR, 0))
+st.sidebar.caption("Research prototype - not clinically validated.")
 
 # ======================================================================
 # PATIENT
@@ -194,20 +239,19 @@ if role == "Patient":
             sex = c2.selectbox("Sex", ["female", "male"])
             tone = c3.selectbox("Skin tone (0 lightest - 5 darkest)", list("012345"), index=3)
             if st.form_submit_button("Register") and name:
-                pid = svc.register_patient(name, age, sex, tone)
-                st.session_state["pid"] = pid
+                st.session_state["pid"] = svc.register_patient(name, age, sex, tone)
                 st.rerun()
     if not patients:
         st.info("Register a patient to begin.")
         st.stop()
 
     labels = {p["id"]: f"#{p['id']} {p['name']}" for p in patients}
-    pid = st.selectbox("Patient", list(labels), format_func=labels.get,
-                       index=list(labels).index(st.session_state.get("pid", list(labels)[0]))
+    keys = list(labels)
+    pid = st.selectbox("Patient", keys, format_func=labels.get,
+                       index=keys.index(st.session_state["pid"])
                        if st.session_state.get("pid") in labels else 0)
     patient = store.patient(pid)
     cases = store.cases(patient_id=pid)
-
     with st.expander("Open a new case (a new spot)", expanded=not cases):
         with st.form("case"):
             site = st.selectbox("Where is the spot?", SITES)
@@ -219,45 +263,53 @@ if role == "Patient":
         st.stop()
 
     clabels = {c["id"]: f"Case #{c['id']} · {c['site'] or '?'} · {c['status']}" for c in cases}
-    cid = st.selectbox("Case", list(clabels), format_func=clabels.get,
-                       index=list(clabels).index(st.session_state["cid"])
+    ckeys = list(clabels)
+    cid = st.selectbox("Case", ckeys, format_func=clabels.get,
+                       index=ckeys.index(st.session_state["cid"])
                        if st.session_state.get("cid") in clabels else 0)
     case = store.case(cid)
 
     left, right = st.columns([1.1, 1])
     with left:
         st.subheader("1 · Evidence")
-        sample_names = {i: f"{s_['lesion_id']} (demo lesion)" for i, s_ in enumerate(samples)}
-        use_sample = st.toggle("Use a real held-out MILK10k lesion (demo)", value=True)
-        if use_sample:
-            si = st.selectbox("Demo lesion", list(sample_names), format_func=sample_names.get)
+        src = st.radio("Photos", ["Real held-out MILK10k lesion (demo)", "Upload my own"],
+                       horizontal=True)
+        symptoms = st.text_area("Describe the spot in your own words (optional)",
+                                placeholder="e.g. it has been bleeding and getting bigger "
+                                            "for 3 weeks")
+        if src.startswith("Real"):
+            names = {i: f"{s['lesion_id']}" for i, s in enumerate(samples)}
+            si = st.selectbox("Demo lesion", list(names), format_func=names.get)
             sample = samples[si]
-            st.caption("Held-out test lesion - the model never trained on it. "
-                       f"True diagnosis is hidden from the system: {sample['true_label']}")
+            with_derm = st.checkbox("Include the dermoscopy photo from the start", value=False)
+            st.caption("Held-out test lesion - never used for training. "
+                       f"True diagnosis (hidden from the system): **{sample['true_label']}**")
+            if st.button("Submit and assess", type="primary",
+                         disabled=case["status"] == CaseStatus.CLOSED):
+                svc.submit_photo(cid, sample["clinical_path"])
+                if with_derm:
+                    svc.submit_dermoscopy(cid, sample["dermoscopy_path"])
+                svc.submit_details(cid, {**sample["metadata"], "symptoms_text": symptoms})
+                st.session_state[f"derm_{cid}"] = sample["dermoscopy_path"]
+                svc.assess(cid)
+                st.rerun()
         else:
-            sample = None
-            up = st.file_uploader("Clinical photo of the spot", type=["jpg", "jpeg", "png"])
+            up = st.file_uploader("Clinical photo", type=["jpg", "jpeg", "png"])
+            upd = st.file_uploader("Dermoscopy photo (optional)", type=["jpg", "jpeg", "png"])
             m1, m2 = st.columns(2)
             gsite = m1.selectbox("Body area", GENERAL_SITES)
             site = m2.selectbox("Exact site", SITES,
                                 index=SITES.index(case["site"]) if case["site"] in SITES else 0)
-
-        if st.button("Submit photo + details and assess", type="primary",
-                     disabled=case["status"] == CaseStatus.CLOSED):
-            if sample:
-                svc.submit_photo(cid, sample["clinical_path"])
-                svc.submit_details(cid, sample["metadata"])
-                st.session_state[f"derm_{cid}"] = sample["dermoscopy_path"]
-            elif up is not None:
+            if st.button("Submit and assess", type="primary", disabled=up is None):
                 svc.submit_photo(cid, Image.open(up))
+                if upd is not None:
+                    svc.submit_dermoscopy(cid, Image.open(upd))
                 svc.submit_details(cid, {"age": patient["age"], "sex": patient["sex"],
                                          "skin_tone_class": patient["skin_tone"],
-                                         "site": site, "anatom_site_general": gsite})
-            else:
-                st.warning("Upload a photo first.")
-                st.stop()
-            svc.assess(cid)
-            st.rerun()
+                                         "site": site, "anatom_site_general": gsite,
+                                         "symptoms_text": symptoms})
+                svc.assess(cid)
+                st.rerun()
 
         if case["status"] == CaseStatus.AWAITING_PATIENT:
             st.warning("📷 The system asked for a **dermoscopy photo** of this spot.")
@@ -266,27 +318,18 @@ if role == "Patient":
                 svc.submit_dermoscopy(cid, derm_sample)
                 svc.assess(cid)
                 st.rerun()
-            upd = st.file_uploader("…or upload your own dermoscopy photo",
-                                   type=["jpg", "jpeg", "png"], key=f"du{cid}")
-            if upd is not None and st.button("Submit dermoscopy"):
-                svc.submit_dermoscopy(cid, Image.open(upd))
+            upd2 = st.file_uploader("…or upload your own dermoscopy photo",
+                                    type=["jpg", "jpeg", "png"], key=f"du{cid}")
+            if upd2 is not None and st.button("Submit dermoscopy"):
+                svc.submit_dermoscopy(cid, Image.open(upd2))
                 svc.assess(cid)
                 st.rerun()
 
-        if case["status"] in (CaseStatus.FOLLOW_UP, CaseStatus.ASSESSED) and \
-                store.followups(cid, status="SCHEDULED"):
+        if store.followups(cid, status="SCHEDULED"):
             st.info("🗓️ Follow-up scheduled for "
                     + ", ".join(f["due_date"] for f in store.followups(cid, status="SCHEDULED")))
-            fup = st.file_uploader("Upload your follow-up photo", type=["jpg", "jpeg", "png"],
-                                   key=f"fu{cid}")
-            fs = st.session_state.get(f"derm_{cid}")
-            c_a, c_b = st.columns(2)
-            if fup is not None and c_a.button("Submit follow-up photo"):
-                out = svc.submit_followup_photo(cid, Image.open(fup))
-                st.session_state[f"change_{cid}"] = out["change"]
-                st.rerun()
             last = store.latest_evidence(cid, "clinical_photo")
-            if last and c_b.button("Re-submit the same photo (demo: no change)"):
+            if last and st.button("Submit follow-up photo (demo: same photo)"):
                 out = svc.submit_followup_photo(cid, last["path"])
                 st.session_state[f"change_{cid}"] = out["change"]
                 st.rerun()
@@ -294,24 +337,32 @@ if role == "Patient":
         if ch:
             (st.error if ch["alert"] else st.success)(
                 f"Change check: P(malignant) {ch['previous_p_malignant']:.0%} → "
-                f"{ch['p_malignant']:.0%}" + ("  — sent to a doctor urgently" if ch["alert"]
-                                               else "  — no worrying change"))
+                f"{ch['p_malignant']:.0%}" + (" - sent to a doctor urgently" if ch["alert"]
+                                              else " - no worrying change"))
         show_images(cid)
 
     with right:
         st.subheader("2 · Result")
         a = store.latest_assessment(cid)
         if a:
-            badge(a["action"], a["urgency"], a["result"]["decision"].get("tier"))
+            r = a["result"]
+            badge(a["action"], a["urgency"], r["decision"].get("tier"))
             st.write("")
-            st.markdown(a["result"]["patient_message"].replace("\n", "  \n"))
+            st.markdown(r["patient_message"].replace("\n", "  \n"))
+            conf = r["decision"].get("tentative_confidence")
+            if conf is not None:
+                st.progress(min(max(conf, 0.0), 1.0),
+                            text=f"Confidence that this assessment is right: {conf:.0%}")
+            sc = r.get("scribe") or {}
+            if sc.get("red_flags"):
+                st.error("Warning signs from your description: " + ", ".join(sc["red_flags"]))
             rv = store.reviews(cid)
             if rv:
-                st.success(f"🧑‍⚕️ Reviewed by Dr {rv[-1]['doctor']}: "
-                           f"**{rv[-1]['verdict']}** - {rv[-1]['diagnosis'] or ''}")
+                st.success(f"🧑‍⚕️ Reviewed by Dr {rv[-1]['doctor']}: **{rv[-1]['verdict']}** - "
+                           f"{rv[-1]['diagnosis'] or ''}")
         else:
             st.caption("No assessment yet.")
-        st.subheader("3 · Messages & instructions")
+        st.subheader("3 · Messages")
         messages_panel(cid, "patient")
         q = st.chat_input("Ask your doctor a question")
         if q:
@@ -327,13 +378,14 @@ elif role == "Doctor":
     queue = svc.doctor_queue()
     st.subheader(f"Review queue ({len(queue)})")
     if not queue:
-        st.success("Nothing waiting. Deferred cases and system answers needing sign-off "
-                   "appear here, most urgent first.")
+        st.success("Nothing waiting. Deferred cases, low-confidence answers to confirm, and "
+                   "system answers needing sign-off appear here, most urgent first.")
         st.stop()
     qdf = pd.DataFrame(queue)
     qdf["p_malignant"] = qdf["p_malignant"].map(lambda x: f"{x:.0%}" if x is not None else "-")
-    st.dataframe(qdf[["case_id", "patient", "kind", "urgency", "action", "tentative",
-                      "p_malignant", "unanswered_questions", "waiting_since"]],
+    st.dataframe(qdf[[c for c in ("case_id", "patient", "kind", "urgency", "action", "tier",
+                                  "tentative", "p_malignant", "unanswered_questions",
+                                  "waiting_since") if c in qdf.columns]],
                  hide_index=True, width="stretch")
 
     cid = st.selectbox("Open case", [r["case_id"] for r in queue],
@@ -344,57 +396,53 @@ elif role == "Doctor":
     st.markdown(f"**{p['name']}** · age {p['age'] or '?'} · {p['sex'] or '?'} · "
                 f"skin tone {p['skin_tone'] or '?'} · site **{case['site'] or '?'}**")
 
-    tab1, tab2, tab3 = st.tabs(["Evidence & assessment", "Messages", "Timeline & audit"])
-    with tab1:
+    tabs = st.tabs(["Assessment", "Specialist team & gates", "Similar cases & report",
+                    "Messages", "Timeline"])
+    with tabs[0]:
         show_images(cid)
         if a:
-            badge(a["action"], a["urgency"], a["result"]["decision"].get("tier"))
-            st.code(a["result"]["doctor_message"], language=None)
+            r = a["result"]
+            badge(a["action"], a["urgency"], r["decision"].get("tier"))
+            st.code(r["doctor_message"], language=None)
+            evidence_panel(r)
+            sc = r.get("scribe") or {}
+            if sc:
+                st.info(f"Patient's account: {sc.get('summary', '')}  (informativeness "
+                        f"{sc.get('informativeness', 0):.2f})")
+            for kind, q in (r.get("quality") or {}).items():
+                if q and q.get("issues"):
+                    st.warning(f"Image quality - {kind}: " + ", ".join(q["issues"]))
+    with tabs[1]:
+        if a:
+            l, rr = st.columns([1.3, 1])
+            with l:
+                team_panel(a["result"])
+            with rr:
+                gatekeeper(a["result"])
+    with tabs[2]:
+        if a:
+            similar_gallery(a["result"])
             rep = a["result"].get("report") or {}
             if rep.get("text"):
                 st.markdown(f"**Report** _(source: {rep.get('source')})_")
                 st.info(rep["text"])
-            for kind, q in (a["result"].get("quality") or {}).items():
-                if q and q.get("issues"):
-                    st.warning(f"Image quality - {kind}: " + ", ".join(q["issues"]))
-            evidence_panel(a["result"])
-            sim = (a["result"].get("similar") or {}).get("similar_cases") or []
-            if sim:
-                agree = a["result"]["similar"].get("agreement")
-                st.markdown("**Similar confirmed past cases** (training lesions, "
-                            "histopathology-backed; shown for context, never used to decide)"
-                            + (f" - {agree:.0%} share the tentative diagnosis"
-                               if agree is not None else ""))
-                cols = st.columns(len(sim))
-                for col, c in zip(cols, sim):
-                    with col:
-                        if c.get("clinical_path") and Path(c["clinical_path"]).exists():
-                            st.image(c["clinical_path"], width="stretch")
-                        st.caption(f"**{c['diagnosis']}** · sim {c['similarity']:.2f}")
-            if len(store.assessments(cid)) > 1:
-                st.markdown("**Assessment history**")
-                st.dataframe(pd.DataFrame([{k: x[k] for k in ("created_at", "stage", "action",
-                                                               "tentative", "p_malignant")}
-                                           for x in store.assessments(cid)]),
-                             hide_index=True)
-    with tab2:
+    with tabs[3]:
         messages_panel(cid, "doctor")
         reply = st.chat_input("Reply to the patient")
         if reply:
             svc.reply(cid, doctor, reply)
             st.rerun()
-    with tab3:
+    with tabs[4]:
         st.dataframe(as_table(svc.timeline(cid)), hide_index=True, width="stretch")
-        with st.expander("Raw audit log"):
-            st.json(store.audit_log(cid))
+        if len(store.assessments(cid)) > 1:
+            st.markdown("**Assessment history**")
+            st.dataframe(pd.DataFrame([{k: x[k] for k in ("created_at", "stage", "action",
+                                                           "tentative", "p_malignant")}
+                                       for x in store.assessments(cid)]), hide_index=True)
 
     st.subheader("Your decision")
     with st.form("review"):
-        verdict = st.radio("Verdict", ["CONFIRM", "OVERRIDE", "NEED_IN_PERSON"],
-                           horizontal=True,
-                           help="CONFIRM: agree with the system's (tentative) call. "
-                                "OVERRIDE: state your own diagnosis. "
-                                "NEED_IN_PERSON: book a visit.")
+        verdict = st.radio("Verdict", ["CONFIRM", "OVERRIDE", "NEED_IN_PERSON"], horizontal=True)
         default = engine.classes.index(a["tentative"]) if a and a["tentative"] in engine.classes else 0
         dx = st.selectbox("Diagnosis", engine.classes, index=default,
                           format_func=lambda c: f"{c} - {MILK_CLASS_FULL_NAMES.get(c, c)}")
@@ -410,64 +458,128 @@ elif role == "Doctor":
             st.rerun()
 
 # ======================================================================
+# STRESS LAB
+# ======================================================================
+elif role == "Stress Lab":
+    from src.eval.corruptions import IMAGE_CORRUPTIONS
+    st.title("Stress Lab")
+    st.markdown("Damage the evidence of a real held-out lesion and watch how the system "
+                "responds. A safe system should become **less** confident, ask for more "
+                "evidence, or hand the case to a doctor - never become confidently wrong.")
+    names = {i: f"{s['lesion_id']}  (true: {s['true_label']})" for i, s in enumerate(samples)}
+    c1, c2, c3 = st.columns([1.4, 1, 1])
+    si = c1.selectbox("Lesion", list(names), format_func=names.get)
+    corr = c2.selectbox("Damage", ["none", "blur", "dark", "noise", "jpeg", "occlusion",
+                                   "remove patient details"])
+    with_derm = c3.checkbox("With dermoscopy", value=False)
+    sample = samples[si]
+    clean = Image.open(sample["clinical_path"]).convert("RGB")
+    derm = Image.open(sample["dermoscopy_path"]).convert("RGB") if with_derm else None
+    damaged = IMAGE_CORRUPTIONS[corr](clean) if corr in IMAGE_CORRUPTIONS else clean
+    meta_bad = {} if corr == "remove patient details" else sample["metadata"]
+
+    if st.button("Run both", type="primary"):
+        with st.spinner("Assessing..."):
+            st.session_state["stress"] = (engine.assess(clean, derm, sample["metadata"]).to_dict(),
+                                          engine.assess(damaged, derm, meta_bad).to_dict(),
+                                          si, corr, with_derm)
+    res = st.session_state.get("stress")
+    if res and res[2:] == (si, corr, with_derm):
+        L, R = st.columns(2)
+        for col, title, img, r in ((L, "Original", clean, res[0]),
+                                   (R, f"Damaged: {corr}", damaged, res[1])):
+            with col:
+                st.subheader(title)
+                st.image(img, width=260)
+                d = r["decision"]
+                badge(r["action"], d.get("urgency"), d.get("tier"), big=False)
+                st.markdown(f"Tentative: **{engine.classes[d['tentative']] if d.get('tentative') is not None else '-'}** "
+                            f"(truth {sample['true_label']}) · confidence "
+                            f"{(d.get('tentative_confidence') or 0):.0%}")
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Ignorance u", f"{r['ignorance']:.3f}")
+                m2.metric("Conflict", f"{r['conflict']:.3f}")
+                m3.metric("P(malignant)", f"{(d.get('p_malignant') or 0):.0%}")
+                w = r.get("fusion_weights") or {}
+                if w:
+                    st.bar_chart(pd.DataFrame({"weight": w}), horizontal=True, height=170)
+                gatekeeper(r)
+    st.caption("The experiment version over 300 lesions: scripts/run_stress_milk.py "
+               "(results in the Research view).")
+
+# ======================================================================
+# RESEARCH
+# ======================================================================
+elif role == "Research":
+    st.title("Research results")
+    st.caption("MILK10k test split (787 lesions), scored once; everything fitted on the 786 "
+               "validation lesions.")
+    an = load_json("outputs/analysis/analysis.json")
+    if an:
+        ci = an["ci"]
+        k = st.columns(4)
+        k[0].metric("Answered", f"{ci['answered']['point']:.0%}",
+                    help=f"95% CI {ci['answered']['ci95'][0]:.0%}-{ci['answered']['ci95'][1]:.0%}")
+        k[1].metric("HIGH confidence", f"{ci['high_cov']['point']:.0%}")
+        k[2].metric("HIGH accuracy", f"{ci['high_acc']['point']:.1%}",
+                    help=f"95% CI {ci['high_acc']['ci95'][0]:.1%}-{ci['high_acc']['ci95'][1]:.1%}")
+        k[3].metric("Missed cancers (HIGH)", f"{ci['high_miss']['point']:.1%}",
+                    delta=f"vs {ci['b3_miss']['point']:.1%} baseline", delta_color="inverse")
+        st.markdown("**Paired bootstrap tests**")
+        st.dataframe(pd.DataFrame(an["paired"]).T, width="stretch")
+    tr = load_json("outputs/milk_team/team_report.json")
+    t1, t2, t3, t4, t5 = st.tabs(["Fusion", "Decision vs baselines", "Robustness",
+                                  "Distribution shift", "Fairness"])
+    with t1:
+        if tr:
+            st.markdown("**Fusion methods**")
+            st.dataframe(pd.DataFrame(tr["fusion"]).T.round(3), width="stretch")
+            st.markdown("**Each specialist alone**")
+            st.dataframe(pd.DataFrame(tr["specialists"]).T.round(3), width="stretch")
+        rel = engine.reliability
+        st.markdown("**Which input to trust, per diagnosis** (measured; the adaptive prior)")
+        st.dataframe(pd.DataFrame({"photo": rel["image"], "dermoscopy": rel["dermoscopy"],
+                                   "details": rel["meta"], "n": rel["n_per_class"]},
+                                  index=rel["classes"]), width="stretch")
+    with t2:
+        for cost in (5, 10):
+            r = load_json(f"outputs/eade_team/cost_{cost}/report.json")
+            if r:
+                st.markdown(f"**Missed-cancer cost {cost}**")
+                st.dataframe(pd.DataFrame(r["baselines"]).set_index("policy").round(3),
+                             width="stretch")
+        if an:
+            st.markdown("**Learned-deferral baseline (L2D-style) at the same coverage**")
+            st.write(an["learned_deferral"])
+    with t3:
+        s = load_json("outputs/stress_milk/report_team.json")
+        if s:
+            st.dataframe(pd.DataFrame(s["conditions"]).T.round(3), width="stretch")
+    with t4:
+        sh = load_json("outputs/shift_pad/report.json")
+        if sh:
+            st.markdown("MILK10k-trained system on **PAD-UFES-20** (Brazilian smartphone photos), "
+                        "no refitting; the original PAD-UFES model is switched off to avoid leakage.")
+            st.dataframe(pd.DataFrame({"value": {k: v for k, v in sh.items()
+                                                 if not isinstance(v, list)}}), width="stretch")
+        else:
+            st.info("Run scripts/run_shift_pad.py")
+    with t5:
+        if an:
+            st.dataframe(pd.DataFrame(an["skin_tone"]).T, width="stretch")
+            st.caption("Groups under 30 lesions are too small to judge.")
+
+# ======================================================================
 # SYSTEM
 # ======================================================================
 else:
     st.title("System")
-    t1, t2, t3 = st.tabs(["Research results", "Platform activity", "How it works"])
-    with t1:
-        st.markdown("Specialist team (3 evidential heads trained on MILK10k, the original "
-                    "PAD-UFES Model A, a similar-case vote) fused by iterative "
-                    "diagnosis-adaptive fusion; calibrated on 786 validation lesions, scored "
-                    "once on 787 test lesions.")
-        tr = ROOT / "outputs" / "milk_team" / "team_report.json"
-        if tr.exists():
-            rep = json.loads(tr.read_text())
-            st.markdown("**Fusion methods (test split)**")
-            st.dataframe(pd.DataFrame(rep["fusion"]).T.round(3), width="stretch")
-            st.markdown("**Each specialist alone (test split)**")
-            st.dataframe(pd.DataFrame(rep["specialists"]).T.round(3), width="stretch")
-        rows = []
-        for cost in (5, 10):
-            f = ROOT / "outputs" / "eade_team" / f"cost_{cost}" / "report.json"
-            if not f.exists():
-                f = ROOT / "outputs" / "eade_milk" / f"cost_{cost}" / "report.json"
-            if f.exists():
-                r = json.loads(f.read_text())
-                for b in r["baselines"]:
-                    rows.append({"miss cost": cost, **b})
-        if rows:
-            df = pd.DataFrame(rows)
-            st.dataframe(df.style.format({c: "{:.3f}" for c in df.columns
-                                          if df[c].dtype.kind == "f"}),
-                         hide_index=True, width="stretch")
-            st.caption("cover = answered alone · acq = dermoscopy requested · miss = cancer "
-                       "called benign among answered · FA = benign called cancer · "
-                       "saysM = share of answers naming a cancer · cost = mean cost/case")
-        rel = engine.reliability
-        st.markdown("**Which source to trust for which diagnosis** (measured, validation)")
-        st.dataframe(pd.DataFrame({"clinical photo": rel["image"],
-                                   "dermoscopy": rel["dermoscopy"],
-                                   "patient details": rel["meta"],
-                                   "n": rel["n_per_class"]}, index=rel["classes"]),
-                     width="stretch")
-    with t2:
-        st.json(store.stats())
-        st.dataframe(as_table(store.audit_log(limit=200)), hide_index=True,
-                     width="stretch")
-    with t3:
-        st.markdown("""
-1. **Each source forms its own opinion.** Photo, dermoscopy and patient details each get
-   an evidential head: *belief* in each diagnosis plus *ignorance* `u` (1 = no evidence).
-2. **Opinions are combined by Dempster–Shafer.** A missing source is total ignorance and
-   changes nothing. A weak source has high `u` and little influence - the **dynamic
-   fusion weights** shown per case. Disagreement shows up as **conflict `C`**.
-3. **Safety gates.** A conformal set over *benign / malignant* blocks false reassurance;
-   a Learn-then-Test threshold certifies the risk level; high conflict sends the case
-   to a human.
-4. **Cheapest action.** Compare the expected cost of answering, asking for dermoscopy, or
-   deferring - with a missed cancer priced far above a false alarm.
-5. **Care workflow.** ACQUIRE asks the patient for a dermoscopy photo; DEFER goes to the
-   doctor queue *with* the system's tentative opinion; PROCEED gives a result and a
-   follow-up. Follow-up photos are checked for change.
+    st.json(store.stats())
+    st.dataframe(as_table(store.audit_log(limit=200)), hide_index=True, width="stretch")
+    st.markdown("""
+**Pipeline:** quality agent → five specialists (3 evidential heads, the original PAD-UFES
+Model A, a similar-case vote) → Devil's Advocate (Q, R, U, C, M, OOD) → iterative
+diagnosis-adaptive fusion + Dempster–Shafer ignorance/conflict → gatekeeper (conflict,
+conformal, Learn-then-Test, quality, OOD, cost) → outcome → librarian, scribe, report +
+verifier → care workflow.
 """)

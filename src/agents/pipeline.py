@@ -34,6 +34,7 @@ from PIL import Image
 from src.agents.librarian import MilkLibrarian
 from src.agents.quality import ImageQualityAgent
 from src.agents.report import ReportAgent
+from src.agents.scribe import ScribeAgent
 from src.constants import MILK_CLASS_FULL_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -53,6 +54,7 @@ class DGuardPipeline:
         # Dermoscopy images are smoother and more uniformly lit than phone photos,
         # so they get thresholds fitted on dermoscopy images, not on photos.
         self.dermo_quality = dermo_quality or self.quality
+        self.scribe = ScribeAgent()
         self.reporter = reporter or ReportAgent(engine.classes, MILK_CLASS_FULL_NAMES)
 
     @classmethod
@@ -89,6 +91,8 @@ class DGuardPipeline:
                metadata: Optional[Dict]):
         q = {"clinical photo": self.quality.check(clinical),
              "dermoscopy": self.dermo_quality.check(dermoscopy)}
+        metadata = dict(metadata or {})
+        symptoms = metadata.pop("symptoms_text", None)       # the model has no text input
         result = self.engine.assess(clinical, dermoscopy, metadata)
         result.quality = {k: (v.to_dict() if v else None) for k, v in q.items()}
 
@@ -111,6 +115,22 @@ class DGuardPipeline:
                                                      MILK_CLASS_FULL_NAMES)
             result.doctor_message = explain_doctor(d, self.engine.classes,
                                                    MILK_CLASS_FULL_NAMES)
+
+        # SCRIBE: warning signs in the patient's own words raise triage urgency;
+        # they never change the diagnosis or the confidence tier.
+        sr = self.scribe.read(symptoms, metadata.get("age"))
+        if sr is not None:
+            result.scribe = sr.to_dict()
+            if sr.red_flags and result.decision.urgency != "URGENT":
+                result.decision.urgency = "URGENT"
+                from src.decision.explain import explain_doctor, explain_patient
+                result.patient_message = explain_patient(result.decision, self.engine.classes,
+                                                         MILK_CLASS_FULL_NAMES)
+                result.doctor_message = explain_doctor(result.decision, self.engine.classes,
+                                                       MILK_CLASS_FULL_NAMES)
+            if sr.red_flags:
+                result.patient_message += ("\nYou mentioned " + ", ".join(sr.red_flags)
+                                           + " - please make sure a doctor sees this spot soon.")
 
         tent = result.decision.tentative
         tent_name = self.engine.classes[tent] if tent is not None else None

@@ -170,6 +170,83 @@ a third of the matched baseline.
 
 ---
 
+## 7a. Statistics — confidence intervals and significance
+
+Bootstrap, 2000 resamples of the 787 test lesions (`scripts/analyze_milk.py`):
+
+| Quantity | Value | 95% CI |
+|---|---|---|
+| Answered | 89.6% | 87.4–91.7% |
+| HIGH-confidence share | 60.2% | 56.7–63.7% |
+| HIGH accuracy | 76.2% | 71.9–80.0% |
+| Missed cancers, HIGH | **3.0%** | 1.5–4.6% |
+| Missed cancers, confidence threshold (same coverage) | 9.3% | 6.7–11.9% |
+| Team-fusion macro-F1 | 0.453 | 0.378–0.513 |
+
+| Paired test | Difference | 95% CI | one-sided p |
+|---|---|---|---|
+| Missed cancers: confidence threshold − D-GUARD | +6.3 pts | +4.1 to +8.8 | **< 0.001** |
+| Macro-F1: team fusion − Dempster–Shafer | +0.078 | +0.018 to +0.129 | **0.002** |
+| Missed cancers: learned rejector − D-GUARD | +0.6 pts | −0.7 to +2.0 | 0.18 (n.s.) |
+
+### Against a stronger baseline — learned deferral
+
+A **learned rejector** (L2D-style: a gradient-boosted classifier trained on validation to
+predict the model's own errors, abstaining where it expects to be wrong) at the same 60.2%
+coverage: accuracy 75.9%, **missed cancers 3.6%** — statistically indistinguishable from
+D-GUARD's 3.0%. **On safety alone, a well-trained rejector matches our HIGH tier.** What the
+rejector does not have: a certified bound, dermoscopy acquisition, an answer for the other
+40% of patients, a reason for each decision, and the verified report.
+
+### Fairness — by skin tone
+
+| Skin tone | n | HIGH share | HIGH accuracy | Missed (HIGH) |
+|---|---|---|---|---|
+| 1 | 14 | 21% | 33% | 33% — **too few to judge** |
+| 2 | 67 | 54% | 78% | **8.3%** |
+| 3 | 489 | 66% | 77% | 2.2% |
+| 4 | 167 | 54% | 74% | 3.3% |
+| 5 | 50 | 44% | 73% | 0.0% |
+
+Lighter tones (1–2) fare worse and are under-represented in MILK10k. Reported, not fixed.
+
+### Decision curve — net benefit of "refer as possibly malignant"
+
+| Threshold | Refer everyone | Refer if P(malignant) ≥ t | D-GUARD rule |
+|---|---|---|---|
+| 0.1 | 0.706 | 0.694 | 0.695 |
+| 0.3 | 0.622 | 0.628 | 0.629 |
+| 0.5 | 0.471 | **0.555** | 0.511 |
+
+D-GUARD's referral rule (refer unless a HIGH-confidence benign answer) is as good as a tuned
+probability threshold at low thresholds and more conservative at high ones.
+
+---
+
+## 7b. Distribution shift — PAD-UFES-20, no refitting
+
+The full MILK10k-calibrated system on all 2,298 PAD-UFES-20 smartphone photos (Brazil,
+6 classes mapped to MILK10k, age/sex/site only, no dermoscopy). The original PAD-UFES
+Model A is switched off — it was trained on these images. `scripts/run_shift_pad.py`.
+
+| | MILK10k test | PAD-UFES-20 |
+|---|---|---|
+| Mean ignorance | 0.676 | **0.748** |
+| OOD-flagged / severe photo quality | 1% / 6% | **6% / 26%** |
+| HIGH-confidence answers | 60% | **16%** |
+| Deferred | 10% | **20%** |
+| Cancer-vs-benign AUROC | 0.799 | **0.802** |
+| Accuracy, all answers | 0.644 | 0.385 |
+| Accuracy, HIGH tier | 0.762 | 0.476 (confidence threshold: 0.557) |
+| Missed cancers, HIGH tier | 3.0% | **0.0%** |
+
+**Read:** the system *notices* the shift (every warning signal rises, confident answers drop
+from 60% to 16%) and the safety target holds — no cancer missed among confident answers.
+But the 11-class diagnosis does not transfer: confident answers are only 48% right, below a
+plain confidence threshold. Safe, not accurate, under shift.
+
+---
+
 ## 8. Other measured facts
 
 | | |

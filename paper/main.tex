@@ -93,7 +93,10 @@ On MILK10k, where every lesion pairs a clinical and a dermoscopic image, adaptiv
 specialist fusion raises 11-class macro-F1 from 0.376 to 0.453 over evidential fusion
 alone. Of 787 held-out patients, 89.6\% receive an answer; high-confidence answers cover
 60.2\% of patients at 76.2\% accuracy and miss 3.0\% of malignancies, against 9.3\% for
-confidence-based abstention at identical coverage. Under controlled degradation,
+confidence-based abstention at identical coverage ($p<0.001$, paired bootstrap); a learned
+rejector reaches 3.6\%, statistically indistinguishable. Run unchanged on PAD-UFES-20, the
+system cuts high-confidence answers from 60\% to 16\% and misses no malignancy among them,
+though its 11-class accuracy degrades. Under controlled degradation,
 evidential ignorance alone grows \emph{more} confident on blurred photographs; a quality
 gate removes those answers, while occlusion remains a documented failure.
 \end{abstract}
@@ -143,7 +146,9 @@ confirmed cases, a report writer whose claims are verified against the evidence,
 prioritised clinician queue, and follow-up with change detection (Sec.~\ref{sec:system}).
 \item \textbf{DERMA-STRESS} on the trained system, exposing a failure of evidential
 ignorance under blur, its remedy, and a remaining failure under occlusion
-(Sec.~\ref{sec:stress}).
+(Sec.~\ref{sec:stress}); a \textbf{cross-dataset shift} evaluation on PAD-UFES-20; and
+bootstrap confidence intervals, paired tests, a learned-deferral baseline and a skin-tone
+analysis (Sec.~\ref{sec:stats}).
 \end{enumerate}
 
 The individual techniques are established; the contribution is their integration into
@@ -405,6 +410,10 @@ The \textbf{report agent} writes a structured report, optionally rewritten by a 
 LLM and accepted only if every diagnosis named appears in the evidence, every percentage
 matches an evidence value within one point, and the confidence tier and confirmation
 requirement survive; otherwise the structured report is used.
+The \textbf{scribe} reads the patient's free-text description for warning signs
+(bleeding, growth, change, non-healing, itching or pain, a new lesion after 50), with
+negation handling; a warning sign raises triage urgency but never changes the diagnosis or
+the confidence tier, since the model has no text input.
 The \textbf{care platform} handles patient intake, dermoscopy requests, a clinician queue
 ordered by outcome and urgency (review, confirm, sign-off), confirm/override with
 instructions and follow-ups, follow-up re-assessment with change detection (an increase
@@ -645,6 +654,73 @@ no metadata & 0.754 & 49\% & 6.1\% & 47\% & 6.4\% \\
 \end{table}
 
 % =============================================================================
+\section{Statistical Analysis, Learned Deferral and Fairness}\label{sec:stats}
+
+\textbf{Uncertainty of the estimates.} With 2{,}000 bootstrap resamples of the test set,
+the high-tier miss rate is 3.0\% (95\% CI 1.5--4.6\%) against 9.3\% (6.7--11.9\%) for
+matched max-softmax abstention; the paired difference is $+6.3$ points (CI $+4.1$ to $+8.8$,
+one-sided $p<0.001$). Team fusion improves macro-F1 by $+0.078$ (CI $+0.018$ to $+0.129$,
+$p=0.002$).
+
+\textbf{A stronger baseline.} A learned rejector in the spirit of learning to defer
+\cite{mozannar2020defer}---a gradient-boosted classifier trained on validation to predict
+the model's own errors from confidence, margin, entropy, $\Pr(\text{malignant})$, $u$ and
+$C_{\mathrm{DS}}$---abstaining at the same 60.2\% coverage reaches 75.9\% accuracy and a
+3.6\% miss rate. The difference from \dguard{} ($+0.6$ points, CI $-0.7$ to $+2.0$,
+$p=0.18$) is not significant: a well-trained rejector matches the high tier on safety
+alone. \dguard{}'s additional value lies in the certified bound, the acquisition of
+dermoscopy, answering the remaining 40\% of patients with an explicit tier, and the
+explanation of every decision.
+
+\textbf{Skin tone.} By MILK10k skin-tone class, the high-tier miss rate is 2.2\% for tone
+3 ($n=489$), 3.3\% for tone 4 ($n=167$) and 0\% for tone 5 ($n=50$), but 8.3\% for tone 2
+($n=67$); tone 1 has 14 lesions and cannot be assessed. Lighter tones are both rarer and
+worse served; no mitigation is attempted.
+
+\textbf{Net benefit.} For referral as possibly malignant, \dguard{}'s rule (refer unless a
+high-confidence benign answer) matches a tuned probability threshold at threshold
+probabilities 0.1--0.3 (0.629 vs.\ 0.628 at 0.3) and is more conservative at 0.5 (0.511
+vs.\ 0.555).
+
+% =============================================================================
+\section{Distribution Shift: PAD-UFES-20}\label{sec:shift}
+
+The guarantees assume exchangeability; we test what happens when it fails. The complete
+MILK10k-calibrated system was run, without refitting, on all 2{,}298 PAD-UFES-20 smartphone
+photographs \cite{pacheco2020padufes} (Brazil; six classes mapped to MILK10k; age, sex and
+site as metadata; no dermoscopy). Specialist S4 was disabled because it was trained on
+these images.
+
+\begin{table}[t]
+\centering
+\caption{The MILK10k system on PAD-UFES-20, unchanged (stage A).}
+\label{tab:shift}
+\begin{tabular}{lcc}
+\toprule
+ & MILK10k test & PAD-UFES-20 \\
+\midrule
+Mean ignorance $\bar u$ & 0.676 & 0.748 \\
+OOD-flagged / severe photo quality & 1.0\% / 6\% & 6.2\% / 26\% \\
+High-confidence answers & 60.2\%\textsuperscript{a} & 16.1\% \\
+Deferred & 10.4\% & 19.7\% \\
+Malignant-vs-benign AUROC & 0.799 & 0.802 \\
+Accuracy, all answers & 0.644\textsuperscript{b} & 0.385 \\
+Accuracy, high tier & 0.762 & 0.476 \\
+Missed malignancies, high tier & 3.0\% & 0.0\% \\
+\bottomrule
+\multicolumn{3}{l}{\footnotesize \textsuperscript{a}incl.\ stage B; \textsuperscript{b}stage A.}
+\end{tabular}
+\end{table}
+
+The system registers the shift: ignorance, out-of-distribution flags, quality flags and
+deferrals all rise, and the high-confidence share falls from 60\% to 16\%. Malignancy
+discrimination transfers (AUROC 0.802) and no malignancy is missed among high-confidence
+answers, so the safety target is met here. Eleven-class accuracy does not transfer: the
+high tier is 47.6\% accurate, below max-softmax abstention at the same coverage (55.7\%).
+Under this shift \dguard{} protects the decision that matters for safety but not the
+fine-grained diagnosis.
+
+% =============================================================================
 \section{Discussion and Negative Results}\label{sec:negative}
 
 \textbf{What the original design got right.} Re-weighting sources per case by evidence
@@ -669,6 +745,12 @@ validation raised validation macro-F1 from 0.361 to 0.439 but lowered test macro
 \textbf{Mean cost favours always answering.} Every case needing a clinician is charged
 1.5; the value of \dguard{} lies in the safety of its high-confidence answers at matched
 coverage, not in throughput.
+
+\textbf{Learned deferral is as safe.} A learned rejector matches the high tier's miss
+rate (Sec.~\ref{sec:stats}).
+
+\textbf{Shift.} On PAD-UFES-20 the fine-grained diagnosis degrades to 48\% high-tier
+accuracy (Sec.~\ref{sec:shift}).
 
 \textbf{Rare classes.} Three classes with 1--6 test lesions are never predicted.
 

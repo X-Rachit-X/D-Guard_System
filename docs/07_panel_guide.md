@@ -162,6 +162,17 @@ context, never used to decide"), and any **photo-quality warning**.
 9. Show the results table and the audit log: "Every step is recorded, including which
    version of the policy made each decision."
 
+### 6.2b The Stress Lab moment (1 minute — do this, it convinces)
+
+1. Switch to **Stress Lab**. Pick a lesion, choose **blur**, press **Run both**.
+2. Say: *"Left is the original photo. Right is the same photo blurred. Watch the
+   gatekeeper."* The blurred one loses its HIGH-confidence label — the photo-quality gate
+   fires.
+3. Say the honest part: *"Without that gate, the model itself would have been **more**
+   confident on the blurred photo. We found that in our own stress test — that is why the
+   gate exists."*
+4. Try **remove patient details**: ignorance rises and it asks for dermoscopy.
+
 ### 6.3 If something goes wrong
 
 | Problem | Do |
@@ -225,6 +236,18 @@ exist.**
 > It was trained on a different dataset with different cameras and reaches 22% accuracy on
 > MILK10k. Nobody told the system that; the learned reliability found it and cut its weight
 > to about 2%.
+
+**Q4d. Is your safety gain statistically significant?**
+> Against a confidence threshold, yes: 3.0% vs 9.3% missed cancers, 95% CI of the gap +4.1
+> to +8.8 points, p < 0.001. Against a learned rejector trained to predict its own errors,
+> no — 3.0% vs 3.6%, not significant. We report that. Our advantage over a learned rejector
+> is what it cannot do: certify the bound, ask for dermoscopy, still answer the other 40%,
+> explain each decision.
+
+**Q4e. Does it work on other data?**
+> We ran it unchanged on PAD-UFES-20 — Brazilian smartphone photos it never saw. See the
+> Research view, Distribution-shift tab, for how far the guarantee holds; the guarantee is
+> only promised when test data resemble calibration data.
 
 **Q5. How often does it refuse to answer?**
 > About 1 in 10 — only when the photo and the details contradict each other. Everyone

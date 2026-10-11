@@ -313,7 +313,28 @@ the benign lesions they answer malignant (35% before). With a 5:2 cost ratio, "p
 cancer, see a dermatologist" is the cheaper statement under doubt. Safe, but it costs
 specificity.
 
-## 30. Still unknown
+## 30. A learned rejector is as safe as our HIGH tier
+
+A gradient-boosted error predictor trained on validation (L2D-style), abstaining at the same
+60.2% coverage, misses 3.6% of cancers against D-GUARD's 3.0% — difference 0.6 points,
+95% CI −0.7 to +2.0, p = 0.18. **Not significant.** The large, significant gap is against
+a plain confidence threshold (9.3%). D-GUARD's case therefore rests on what it adds beyond
+safety-by-abstention — certification, acquisition, answering the rest, explanations — not
+on beating every deferral method on miss rate.
+
+## 31. Lighter skin tones fare worse
+
+Skin tone 2 (67 test lesions): 8.3% missed cancers in HIGH answers vs 2.2% for tone 3; tone
+1 has only 14 lesions. MILK10k is dominated by tone 3. No mitigation attempted.
+
+## 32. The diagnosis does not survive a change of dataset
+
+On PAD-UFES-20, unchanged, overall accuracy falls to 38.5% and HIGH-tier accuracy to 47.6% —
+below a plain confidence threshold at the same coverage (55.7%). Missed cancers stay at 0%
+and malignancy AUROC holds (0.80), so the safety decision transfers; the fine-grained
+diagnosis does not.
+
+## 33. Still unknown
 
 Not yet answerable, and marked as such rather than guessed:
 
@@ -323,7 +344,7 @@ Not yet answerable, and marked as such rather than guessed:
 - whether DS conflict fires on real contradictions rather than merely hard cases (**H5**) —
   testable now that conflict is computed correctly; one demo case (true melanoma, photo
   says NV, details disagree) is encouraging but anecdotal
-- whether the guarantee degrades gracefully under shift (**H3**, needs the PAD-UFES run)
+- **answered:** under PAD-UFES-20 shift the miss-rate target held (0%), accuracy did not (§32)
 - whether retrieval adds anything over `u` alone
 
 **Answered since the last version:** the acquisition policy **does** beat random and

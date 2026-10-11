@@ -434,6 +434,15 @@ def main() -> int:
 
     out = ROOT / args.out
     out.mkdir(parents=True, exist_ok=True)
+    # Per-case decisions, so CIs, subgroup and significance analyses can be
+    # computed later without re-running anything (scripts/analyze_milk.py).
+    used_prob = np.where(acquired[:, None], test["full_prob"], test["no_dermo_prob"])
+    np.savez_compressed(
+        out / "cases.npz", y=yt, action=act, tier=tier, pred=pred, acquired=acquired,
+        used_prob=used_prob, p_malignant=used_prob[:, MAL].sum(1),
+        urgency=np.array([d.urgency or "" for d in decisions]),
+        skin_tone=test.get("skin_tone", np.array([""] * n)),
+        lesion_id=test["lesion_id"], case_cost=case_cost)
     report = {
         "n_calibration": int(len(yv)), "n_test": int(n),
         "cost": {"missed_malignant": cost.missed_malignant,

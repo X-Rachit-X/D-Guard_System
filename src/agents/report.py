@@ -86,6 +86,9 @@ class ReportAgent:
             counts = {x: dx.count(x) for x in dict.fromkeys(dx)}
             lines.append("Similar confirmed past cases: " + ", ".join(
                 f"{k} x{v}" for k, v in counts.items()) + ".")
+        sc = getattr(result, "scribe", None) or {}
+        if sc:
+            lines.append(f"Patient account: {sc.get('summary', '')}")
         if d.requires_confirmation:
             lines.append("Requires confirmation by a clinician.")
         lines.append("Decision support only - not a diagnosis.")

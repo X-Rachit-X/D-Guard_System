@@ -217,11 +217,13 @@ doctor replies).
 ```bash
 streamlit run app/dguard_app.py
 ```
-**Patient**: register, open a case, use a real held-out demo lesion or upload a photo,
-see the outcome and messages, add dermoscopy when asked, ask questions, follow-ups.
-**Doctor**: prioritised queue, images, report, evidence panel (u, C, weights, votes,
-differential, reliability), similar-case gallery, confirm/override form, replies, timeline.
-**System**: results tables, measured reliability, platform activity, audit log.
+| View | What you can do |
+|---|---|
+| **Patient** | register, open a case, use a real held-out lesion or upload your own photo (and optionally dermoscopy), describe symptoms in your own words (the **Scribe** flags bleeding, growth, change...), see the outcome, a calibrated confidence bar, messages, follow-ups |
+| **Doctor** | prioritised queue; tabs for assessment, **specialist team & gatekeeper** (every safety check pass/fired), similar cases & verified report, messages, timeline; confirm / override |
+| **Stress Lab** | damage a real lesion (blur, dark, noise, JPEG, occlusion, remove details) and compare original vs damaged side by side |
+| **Research** | every result: fusion, baselines, CIs and paired tests, robustness, distribution shift, fairness |
+| **System** | platform totals and the audit log |
 
 ### REST API
 ```bash
