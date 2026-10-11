@@ -1,0 +1,75 @@
+# The trained specialist team (PAD-UFES-20, 6 classes).
+#
+# This replaces the DermLIP-PanDerm / PanDerm / Swin-Tiny / ResNet152 configs
+# from proj.md Part 2. Those models are not usable here - PanDerm's weights are
+# unpublished, PAD-UFES-20 has no dermoscopy imagery, and the environment is
+# CPU-only - and the previous implementation shipped them with randomly
+# initialised heads. See docs/evaluation_integrity.md section 4.
+#
+# A case is routed to EVERY specialist whose required modalities are present,
+# so the consensus layer receives independent votes.
+
+name: specialists
+embed_dim: 256
+num_classes: 6
+
+# Which specialist speaks for each modality in DiagnosisAdaptiveFusion.
+unimodal_for:
+  clinical_image: A
+  metadata: B
+  text: C
+
+models:
+  A:
+    name: "Image only"
+    modalities: [image]
+    architecture: "ResNet50 + Dermatological Channel Attention + MHSA ViT"
+    checkpoint: "model_A/model_A.pt"
+  B:
+    name: "Metadata only"
+    modalities: [metadata]
+    architecture: "Deep Residual MetaBlock MLP (116 -> 256)"
+    checkpoint: "model_B/model_B.pt"
+  C:
+    name: "Free text only"
+    modalities: [text]
+    architecture: "Bio_ClinicalBERT [CLS] -> residual projector"
+    checkpoint: "model_C/model_C.pt"
+    # Measured at 27.2% on data it was trained on - near chance for 6 imbalanced
+    # classes. The evidence layer down-weights it automatically via entropy.
+    known_weak: true
+  D:
+    name: "Image + metadata"
+    modalities: [image, metadata]
+    architecture: "A + B, evidence-aware gated fusion"
+    checkpoint: "model_D/model_D.pt"
+  E:
+    name: "Image + free text"
+    modalities: [image, text]
+    architecture: "A + C, evidence-aware gated fusion"
+    checkpoint: "model_E/model_E.pt"
+  F:
+    name: "Free text + metadata"
+    modalities: [metadata, text]
+    architecture: "C + B, evidence-aware gated fusion (fusion order [text, metadata])"
+    checkpoint: "model_F/model_F.pt"
+  G:
+    name: "Full multimodal"
+    modalities: [image, metadata, text]
+    architecture: "A + B + C, evidence-aware gated fusion"
+    checkpoint: "model_G/model_G.pt"
+
+# Auxiliary stacking ensembles (model_X.joblib). Optional; loaded only when
+# present. Pickled under scikit-learn 1.9 - src/models/backends.py shims the
+# LogisticRegression.multi_class attribute for older installs.
+stacking:
+  enabled: true
+  suffix: ".joblib"
+
+image_preprocessing:
+  # Must match the training run exactly or the frozen ResNet50 goes
+  # off-distribution: Resize((224,224)) -> ToTensor -> ImageNet normalise.
+  resize: [224, 224]
+  normalize:
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]

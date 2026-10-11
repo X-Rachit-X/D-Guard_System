@@ -51,10 +51,13 @@ Accelerator: GPU T4 x2 or P100.  Runtime ~40-70 min for 25 epochs at 224px.
 # CONFIG
 # =============================================================================
 CFG = dict(
-    DATA_DIR="/kaggle/input/pad-ufes-20",       # <-- point at your dataset
+    # "milk10k"  : paired clinical + dermoscopic images (PRIMARY dataset)
+    # "pad_ufes" : single clinical image + metadata + synthetic text (shift set)
+    DATASET="milk10k",
+    DATA_DIR="/kaggle/input/milk10k",           # <-- point at your dataset
     IMAGES_SUBDIR="images",
     METADATA_CSV="metadata.csv",
-    TEXTS_CSV="generated_clinical_texts.csv",   # optional; skipped if absent
+    TEXTS_CSV="generated_clinical_texts.csv",   # PAD-UFES only; skipped if absent
     OUT_DIR="/kaggle/working/dguard_out",
 
     # dermlip_panderm is RECOMMENDED (dermatology foundation model, public weights).
@@ -75,6 +78,9 @@ CFG = dict(
     WARMUP_FROZEN_EPOCHS=3,      # train heads first, then unfreeze the backbone
     GRAD_CLIP=1.0,
     MODALITY_DROPOUT=0.25,
+    # Set >= EPOCHS to keep the backbone frozen throughout (linear probing).
+    # Required reading if IMAGE_BACKBONE="dermlip_panderm": its licence is
+    # labelled CC-BY-NC-ND, and "ND" arguably forbids fine-tuning.
     EDL_ANNEAL_EPOCHS=10,        # KL regulariser ramp
     LABEL_SMOOTH=0.0,
 
@@ -113,6 +119,16 @@ def set_seed(s):
     torch.cuda.manual_seed_all(s)
 
 
+MILK_CLASSES = ["AKIEC", "BCC", "BEN_OTH", "BKL", "DF", "INF",
+                "MAL_OTH", "MEL", "NV", "SCCKA", "VASC"]
+MILK_MALIGNANT = ["AKIEC", "BCC", "MAL_OTH", "MEL", "SCCKA"]
+MILK_MONET = ["MONET_ulceration_crust", "MONET_hair", "MONET_vasculature_vessels",
+              "MONET_erythema", "MONET_pigmented",
+              "MONET_gel_water_drop_fluid_dermoscopy_liquid",
+              "MONET_skin_markings_pen_ink_purple_pen"]
+MILK_CLINICAL_TYPE = "clinical: close-up"
+MILK_DERMOSCOPIC_TYPE = "dermoscopic"
+
 # =============================================================================
 # DATA
 # =============================================================================
@@ -128,8 +144,20 @@ def engineer(df):
     """Lesion geometry, symptom burden, sun exposure. Deterministic functions of the
     raw fields -- uses no labels."""
     df = df.copy()
-    d1 = pd.to_numeric(df.get("diameter_1"), errors="coerce").fillna(0.0)
-    d2 = pd.to_numeric(df.get("diameter_2"), errors="coerce").fillna(0.0)
+
+    def numcol(name, default):
+        """Numeric column as a Series, or a constant Series when absent.
+
+        DataFrame.get returns None for a missing column, and pd.to_numeric(None)
+        yields a bare numpy scalar with no .fillna - which is how this crashed
+        the first time it met a dataset without PAD-UFES geometry fields.
+        """
+        if name not in df.columns:
+            return pd.Series(default, index=df.index, dtype=float)
+        return pd.to_numeric(df[name], errors="coerce").fillna(default)
+
+    d1 = numcol("diameter_1", 0.0)
+    d2 = numcol("diameter_2", 0.0)
     df["diameter_1"], df["diameter_2"] = d1, d2
     df["diameter_ratio"] = np.where(d2 > 0, d1 / (d2 + 1e-5), 1.0)
     df["lesion_area"] = np.pi * (d1 / 2) * (d2 / 2)
@@ -145,7 +173,7 @@ def engineer(df):
 
     region = df["region"].astype(str).str.upper() if "region" in df else pd.Series("UNK", index=df.index)
     df["is_sun_exposed"] = region.isin(SUN_EXPOSED).astype(float)
-    age = pd.to_numeric(df.get("age"), errors="coerce").fillna(50.0)
+    age = numcol("age", 50.0)
     df["age"] = age
     df["age_norm"] = np.clip(age / 90.0, 0, 1)
     df["missing_frac"] = df.isnull().mean(axis=1)
@@ -154,6 +182,63 @@ def engineer(df):
 
 ENGINEERED = NUMERIC + ["diameter_ratio", "lesion_area", "max_diameter", "log_area",
                         "symptom_burden", "is_sun_exposed", "age_norm", "missing_frac"]
+
+
+# MILK10k carries an entirely different metadata schema: no lesion geometry, no
+# symptom questionnaire. What it does carry is age, sex, site, an ordinal skin
+# tone class, and 7 MONET concept-activation scores per image. Reusing the
+# PAD-UFES encoder here silently produced all-constant columns.
+MILK_NUMERIC = ["age", "age_norm", "skin_tone_ord"] + MILK_MONET
+MILK_CATEGORICAL = ["sex", "site", "anatom_site_general", "skin_tone_class"]
+
+
+class MilkMetaEncoder:
+    """Fit on TRAIN ONLY. MILK10k schema. Uses no labels."""
+
+    def __init__(self):
+        from sklearn.impute import SimpleImputer
+        from sklearn.preprocessing import OneHotEncoder, StandardScaler
+        self.num_imp = SimpleImputer(strategy="median")
+        self.scaler = StandardScaler()
+        self.cat_imp = SimpleImputer(strategy="constant", fill_value="Unknown")
+        try:
+            self.ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+        except TypeError:
+            self.ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
+        self.cats = None
+
+    def _prep(self, df):
+        d = df.copy()
+        age = pd.to_numeric(d.get("age"), errors="coerce")
+        if not isinstance(age, pd.Series):
+            age = pd.Series(np.nan, index=d.index, dtype=float)
+        d["age"] = age.fillna(age.median() if age.notna().any() else 60.0)
+        d["age_norm"] = np.clip(d["age"] / 90.0, 0, 1)
+        # Skin tone is ORDINAL (0..5), so it is kept both as a number and as a
+        # one-hot - the ordering is real, but so is the grouping for fairness.
+        d["skin_tone_ord"] = pd.to_numeric(
+            d.get("skin_tone_class"), errors="coerce").fillna(-1.0)
+        for c in MILK_MONET:
+            if c not in d.columns:
+                d[c] = 0.0
+            d[c] = pd.to_numeric(d[c], errors="coerce").fillna(0.0)
+        self.cats = [c for c in MILK_CATEGORICAL if c in d.columns]
+        for c in self.cats:
+            d[c] = d[c].astype(str).replace(
+                {"nan": "Unknown", "": "Unknown", "None": "Unknown"})
+        return d
+
+    def fit(self, df):
+        d = self._prep(df)
+        self.scaler.fit(self.num_imp.fit_transform(d[MILK_NUMERIC]))
+        self.ohe.fit(self.cat_imp.fit_transform(d[self.cats]))
+        return self
+
+    def transform(self, df):
+        d = self._prep(df)
+        num = self.scaler.transform(self.num_imp.transform(d[MILK_NUMERIC]))
+        cat = self.ohe.transform(self.cat_imp.transform(d[self.cats]))
+        return np.hstack([num, cat]).astype(np.float32)
 
 
 class MetaEncoder:
@@ -192,6 +277,120 @@ class MetaEncoder:
         return np.hstack([num, cat]).astype(np.float32)
 
 
+# ---------------------------------------------------------------------------
+# MILK10k
+# ---------------------------------------------------------------------------
+# 10,480 images / 5,240 lesions, each lesion with ONE clinical close-up and ONE
+# dermatoscopic image. CC-BY-NC. doi 10.34970/648456.
+#
+# Because every lesion has both modalities, "acquire dermoscopy" is a REAL
+# experiment with an oracle upper bound rather than a simulation. That is the
+# reason this is the primary dataset.
+#
+# MILK10k publishes no patient identifiers, so splits are by LESION, with
+# ISIC-ID deduplication. State the residual leakage risk in limitations.
+
+# Verified against the real release on 2026-10-11. The layout is FIXED, so this
+# reads it exactly rather than pattern-matching column names:
+#
+#   metadata.csv                   10480 rows, one per IMAGE
+#   supplements/training_gt.csv     5240 rows, one-hot over 11 classes
+#   supplements/training_input.csv 10480 rows, skin_tone_class + 7 MONET scores
+#   images/<isic_id>.jpg           10480 files
+#
+# Measured facts you should not rediscover the hard way:
+#   * 11 classes, NOT 6. Order below is the sorted column order of training_gt.
+#   * 71.7% of lesions are MALIGNANT; BCC alone is 48.1%. Referral population.
+#   * rarest class MAL_OTH has 9 lesions in total.
+#   * all 10480 images are byte-distinct (SHA-256 checked); no duplicates.
+#   * `attribution` is the single constant "MILK study team": there is NO centre
+#     column, so a centre-held-out shift experiment is impossible on this release.
+
+
+
+def milk_load(data_dir, cfg):
+    """Return (df, image_dir, classes) for MILK10k, one row per LESION.
+
+    Mirrors src/data/milk10k.py so a Kaggle run and a local run agree. Fails
+    loudly on any layout deviation instead of guessing.
+    """
+    data_dir = Path(data_dir)
+    meta_csv = next(iter(sorted(data_dir.rglob("metadata.csv"))), None)
+    if meta_csv is None:
+        raise SystemExit(f"no metadata.csv under {data_dir}")
+    root = meta_csv.parent
+    gt_csv = root / "supplements" / "training_gt.csv"
+    input_csv = root / "supplements" / "training_input.csv"
+    img_dir = root / "images"
+    for q in (gt_csv, input_csv, img_dir):
+        if not q.exists():
+            raise SystemExit(f"expected {q}; is MILK10k fully extracted?")
+
+    meta = pd.read_csv(meta_csv, dtype=str, keep_default_na=False)
+    inp = pd.read_csv(input_csv, dtype=str, keep_default_na=False)
+    gt = pd.read_csv(gt_csv)
+
+    missing = [c for c in MILK_CLASSES if c not in gt.columns]
+    if missing:
+        raise SystemExit(f"{gt_csv} missing class columns {missing}")
+    onehot = gt[MILK_CLASSES].to_numpy(dtype=float)
+    if not (onehot == 1.0).sum(axis=1).all():
+        raise SystemExit(f"{gt_csv}: some lesion has no single active class")
+    gt = pd.DataFrame({
+        "lesion_id": gt["lesion_id"].astype(str),
+        "label_idx": onehot.argmax(axis=1).astype(int),
+    })
+    gt["label_raw"] = [MILK_CLASSES[i] for i in gt["label_idx"]]
+
+    keep = ["isic_id", "skin_tone_class", "site"] + MILK_MONET
+    meta = meta.merge(inp[keep], on="isic_id", how="left", validate="one_to_one")
+
+    clin = meta[meta["image_type"] == MILK_CLINICAL_TYPE].copy()
+    derm = meta[meta["image_type"] == MILK_DERMOSCOPIC_TYPE].copy()
+    if len(clin) != len(derm):
+        raise SystemExit(f"unpaired: {len(clin)} clinical vs {len(derm)} dermoscopic")
+
+    cols = ["lesion_id", "isic_id", "age_approx", "sex", "anatom_site_general",
+            "site", "skin_tone_class", "diagnosis_confirm_type"] + MILK_MONET
+    df = clin[cols].rename(columns={"isic_id": "clinical_file"})
+    df = df.merge(derm[["lesion_id", "isic_id"]].rename(
+        columns={"isic_id": "dermoscopy_file"}), on="lesion_id", validate="one_to_one")
+    df["lesion_id"] = df["lesion_id"].astype(str)
+    df = df.merge(gt, on="lesion_id", validate="one_to_one")
+
+    # The loader hands back bare ISIC ids; the dataset class appends ".jpg".
+    df["clinical_file"] = df["clinical_file"] + ".jpg"
+    df["dermoscopy_file"] = df["dermoscopy_file"] + ".jpg"
+    df["age"] = pd.to_numeric(df["age_approx"], errors="coerce")
+    for c in MILK_MONET:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["malignant"] = df["label_raw"].isin(MILK_MALIGNANT).astype(int)
+
+    df = df.sort_values("lesion_id").reset_index(drop=True)
+    print(f"[milk10k] {len(df)} lesions, {len(MILK_CLASSES)} classes, "
+          f"{100 * df['malignant'].mean():.1f}% malignant")
+    return df, img_dir, MILK_CLASSES
+
+
+
+def lesion_level_split(df, ratios, seed, key="lesion_id"):
+    """Disjoint by lesion. MILK10k has no patient IDs, so this is the finest
+    grouping available; the residual risk is stated in the limitations."""
+    ids = sorted(df[key].astype(str).unique())
+    rng = np.random.default_rng(seed)
+    rng.shuffle(ids)
+    n = len(ids)
+    n_tr, n_va = int(n * ratios[0]), int(n * ratios[1])
+    groups = {"train": set(ids[:n_tr]), "val": set(ids[n_tr:n_tr + n_va]),
+              "test": set(ids[n_tr + n_va:])}
+    out = {k: df[df[key].astype(str).isin(v)].reset_index(drop=True)
+           for k, v in groups.items()}
+    assert not (groups["train"] & groups["test"]), "train/test lesion overlap"
+    assert not (groups["train"] & groups["val"]), "train/val lesion overlap"
+    assert not (groups["val"] & groups["test"]), "val/test lesion overlap"
+    return out
+
+
 def patient_level_split(df, ratios, seed):
     """Disjoint by patient_id. Asserted, because an overlapping split is what
     invalidated the previous results."""
@@ -220,7 +419,8 @@ class DermDataset(Dataset):
         self.tok = tokenizer
         self.train = train
         self.cfg = cfg
-        self.labels = self.df["diagnostic"].map(CLASS_TO_IDX).values.astype(np.int64)
+        lab_col = "diagnostic" if "diagnostic" in self.df.columns else "label_idx"
+        self.labels = self.df[lab_col].map(CLASS_TO_IDX).values.astype(np.int64)             if lab_col == "diagnostic" else self.df[lab_col].values.astype(np.int64)
         size = cfg["IMAGE_SIZE"]
         norm = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
         self.tf = (T.Compose([T.RandomResizedCrop(size, scale=(0.7, 1.0)),
@@ -232,19 +432,36 @@ class DermDataset(Dataset):
                    T.Compose([T.Resize((size, size)), T.ToTensor(), norm]))
         self.texts = (self.df["clinical_text"].fillna("").astype(str).tolist()
                       if "clinical_text" in self.df.columns else [""] * len(self.df))
+        # MILK10k carries a second image per lesion; PAD-UFES-20 does not.
+        self.clin_col = "clinical_file" if "clinical_file" in self.df.columns else "img_id"
+        self.derm_col = "dermoscopy_file" if "dermoscopy_file" in self.df.columns else None
 
     def __len__(self):
         return len(self.df)
 
+    def _load(self, name):
+        """Load one image; a missing file yields a zero tensor and has=0, which
+        becomes the vacuous opinion in the DS fold rather than a fake input."""
+        size = self.cfg["IMAGE_SIZE"]
+        if not name or str(name) in ("nan", "None"):
+            return torch.zeros(3, size, size), 0.0
+        for cand in (self.image_dir / str(name),
+                     self.image_dir / f"{name}.jpg",
+                     self.image_dir / f"{name}.png"):
+            if cand.exists():
+                try:
+                    return self.tf(Image.open(cand).convert("RGB")), 1.0
+                except Exception:
+                    break
+        return torch.zeros(3, size, size), 0.0
+
     def __getitem__(self, i):
         row = self.df.iloc[i]
-        p = self.image_dir / str(row["img_id"])
-        try:
-            img = self.tf(Image.open(p).convert("RGB"))
-            has_img = 1.0
-        except Exception:
-            img = torch.zeros(3, self.cfg["IMAGE_SIZE"], self.cfg["IMAGE_SIZE"])
-            has_img = 0.0
+        img, has_img = self._load(row.get(self.clin_col))
+        if self.derm_col:
+            derm, has_derm = self._load(row.get(self.derm_col))
+        else:
+            derm, has_derm = torch.zeros_like(img), 0.0
 
         txt = self.texts[i]
         has_txt = 1.0 if txt.strip() else 0.0
@@ -256,11 +473,13 @@ class DermDataset(Dataset):
             ids = torch.zeros(self.cfg["TEXT_MAX_LEN"], dtype=torch.long)
             mask = torch.zeros(self.cfg["TEXT_MAX_LEN"], dtype=torch.long)
 
-        return {"image": img, "meta": torch.from_numpy(self.meta[i]),
+        return {"image": img, "dermoscopy": derm,
+                "meta": torch.from_numpy(self.meta[i]),
                 "input_ids": ids, "attention_mask": mask,
                 "label": int(self.labels[i]),
-                "has_image": has_img, "has_meta": 1.0, "has_text": has_txt,
-                "img_id": str(row["img_id"])}
+                "has_image": has_img, "has_dermoscopy": has_derm,
+                "has_meta": 1.0, "has_text": has_txt,
+                "img_id": str(row.get(self.clin_col, i))}
 
 
 # =============================================================================
@@ -385,12 +604,18 @@ class DGuard(nn.Module):
                 p.requires_grad = False
         self.text_proj = nn.Sequential(nn.Linear(768, d), nn.LayerNorm(d), nn.GELU())
 
+        # One shared visual backbone, SEPARATE evidential heads per image
+        # modality: clinical and dermoscopic views have different statistics but
+        # a 5k-lesion dataset cannot support two backbones.
         self.head_img = EvidentialHead(d, K)
+        self.head_dermo = EvidentialHead(d, K)
         self.head_meta = EvidentialHead(d, K)
         self.head_text = EvidentialHead(d, K)
 
     def encode(self, batch):
         z_img = self.img_proj(self.backbone(batch["image"]))
+        z_derm = (self.img_proj(self.backbone(batch["dermoscopy"]))
+                  if "dermoscopy" in batch else None)
         z_meta = self.meta_proj(batch["meta"])
         if self.bert is not None:
             with torch.set_grad_enabled(not self.cfg["FREEZE_TEXT"]):
@@ -399,30 +624,37 @@ class DGuard(nn.Module):
             cls = out.last_hidden_state[:, 0, :]
         else:
             cls = torch.zeros(batch["meta"].shape[0], 768, device=batch["meta"].device)
-        return z_img, z_meta, self.text_proj(cls)
+        return z_img, z_derm, z_meta, self.text_proj(cls)
 
     def forward(self, batch, modality_dropout=0.0):
-        z_img, z_meta, z_text = self.encode(batch)
+        z_img, z_derm, z_meta, z_text = self.encode(batch)
         dev = z_meta.device
         B = z_meta.shape[0]
+        names = ("image", "dermoscopy", "meta", "text")
 
         pres = {"image": batch["has_image"].to(dev).float(),
+                "dermoscopy": batch.get("has_dermoscopy",
+                                        torch.zeros(B)).to(dev).float(),
                 "meta": batch["has_meta"].to(dev).float(),
                 "text": batch["has_text"].to(dev).float()}
 
         if modality_dropout > 0 and self.training:
-            # Absence must be in the training distribution, but never drop everything.
-            keep = torch.rand(B, 3, device=dev) >= modality_dropout
+            # Absence must be in the training distribution, but never drop
+            # everything - a fully vacuous case carries no gradient signal.
+            keep = torch.rand(B, len(names), device=dev) >= modality_dropout
             keep[keep.sum(1) == 0, 0] = True
-            for j, name in enumerate(("image", "meta", "text")):
+            for j, name in enumerate(names):
                 pres[name] = pres[name] * keep[:, j].float()
 
         ops = {"image": gate(self.head_img(z_img), pres["image"], K),
                "meta": gate(self.head_meta(z_meta), pres["meta"], K),
                "text": gate(self.head_text(z_text), pres["text"], K)}
+        ops["dermoscopy"] = (gate(self.head_dermo(z_derm), pres["dermoscopy"], K)
+                             if z_derm is not None
+                             else vacuous(B, K, dev))
 
         fused, conflicts = None, []
-        for name in ("image", "meta", "text"):
+        for name in names:
             fused = ops[name] if fused is None else ds_combine(fused, ops[name])
             if "conflict" in (fused or {}):
                 conflicts.append(fused["conflict"])
@@ -539,6 +771,43 @@ def run(cfg):
     print(f"device={dev}  torch={torch.__version__}")
 
     data_dir = Path(cfg["DATA_DIR"])
+
+    # ---------------- MILK10k (primary) ----------------
+    if cfg.get("DATASET", "pad_ufes") == "milk10k":
+        global CLASS_NAMES, CLASS_TO_IDX, K
+        df, img_dir, classes = milk_load(data_dir, cfg)
+        CLASS_NAMES = classes
+        CLASS_TO_IDX = {c: i for i, c in enumerate(classes)}
+        K = len(classes)
+        # label_idx already comes from the official one-hot ground truth, so it
+        # is NOT re-derived from a string here - that mapping step is exactly
+        # where the PAD-UFES label map got transposed.
+        df["clinical_text"] = ""           # MILK10k ships no narrative
+        print(f"[milk10k] K={K} classes: {classes}")
+        print("class counts:", df["label_raw"].value_counts().to_dict())
+        print("ground truth:", df["diagnosis_confirm_type"].value_counts().to_dict())
+        print("skin tone   :", df["skin_tone_class"].value_counts().sort_index().to_dict())
+
+        if cfg.get("LIMIT_LESIONS"):
+            # Smoke-test path only. Stratified so every class survives.
+            n = int(cfg["LIMIT_LESIONS"])
+            df = (df.groupby("label_raw", group_keys=False)
+                    .apply(lambda g: g.head(max(2, n // len(classes))))
+                    .reset_index(drop=True))
+            print(f"[smoke] LIMIT_LESIONS -> {len(df)} lesions")
+
+        splits = lesion_level_split(df, cfg["SPLIT"], cfg["SEED"])
+        for k, v in splits.items():
+            print(f"  {k:5} n={len(v):5} lesions={v['lesion_id'].nunique():5}")
+
+        menc = MilkMetaEncoder().fit(splits["train"])
+        meta_mats = {k: menc.transform(v) for k, v in splits.items()}
+        meta_dim = meta_mats["train"].shape[1]
+        print(f"metadata dim = {meta_dim} (MILK10k schema, fitted on train only)")
+        return _train_loop(cfg, splits, meta_mats, meta_dim, img_dir, out_dir, dev,
+                           tokenizer=None, text_model=None, group_key="lesion_id")
+
+    # ---------------- PAD-UFES-20 (shift set) ----------------
     meta_path = data_dir / cfg["METADATA_CSV"]
     if not meta_path.exists():
         hits = list(data_dir.rglob(cfg["METADATA_CSV"]))
@@ -588,6 +857,13 @@ def run(cfg):
         tokenizer = AutoTokenizer.from_pretrained(cfg["TEXT_MODEL"])
         text_model = AutoModel.from_pretrained(cfg["TEXT_MODEL"])
 
+    return _train_loop(cfg, splits, meta_mats, meta_dim, img_dir, out_dir, dev,
+                       tokenizer, text_model, group_key="patient_id")
+
+
+def _train_loop(cfg, splits, meta_mats, meta_dim, img_dir, out_dir, dev,
+                tokenizer, text_model, group_key="patient_id"):
+    """Shared training / evaluation loop for both datasets."""
     loaders = {}
     for k in ("train", "val", "test"):
         ds = DermDataset(splits[k], img_dir, meta_mats[k], tokenizer, k == "train", cfg)
@@ -596,7 +872,10 @@ def run(cfg):
                                 drop_last=False)
 
     model = DGuard(meta_dim, cfg, text_model).to(dev)
-    counts = np.bincount(splits["train"]["diagnostic"].map(CLASS_TO_IDX).values, minlength=K)
+    lab_col = "diagnostic" if "diagnostic" in splits["train"].columns else "label_idx"
+    train_labels = (splits["train"][lab_col].map(CLASS_TO_IDX).values
+                    if lab_col == "diagnostic" else splits["train"][lab_col].values)
+    counts = np.bincount(train_labels.astype(int), minlength=K)
     class_w = torch.tensor(len(splits["train"]) / (K * np.maximum(counts, 1)),
                            dtype=torch.float32, device=dev)
     print("class weights:", class_w.tolist())
@@ -698,16 +977,24 @@ def run(cfg):
     # Availability ablation: the key test of H1 -- does it hold up when modalities vanish?
     print("\navailability ablation (test):")
     avail = {}
-    for name, flags in [("image+meta+text", (1, 1, 1)), ("image+meta", (1, 1, 0)),
-                        ("image+text", (1, 0, 1)), ("meta+text", (0, 1, 1)),
-                        ("image", (1, 0, 0)), ("meta", (0, 1, 0)), ("text", (0, 0, 1))]:
+    # The key H1 test: does adding a modality ever HURT? Naive concatenation
+    # does; evidence-aware fusion should not.
+    for name, flags in [("clin+derm+meta", (1, 1, 1, 0)),
+                        ("clin+derm", (1, 1, 0, 0)),
+                        ("clin+meta", (1, 0, 1, 0)),
+                        ("derm+meta", (0, 1, 1, 0)),
+                        ("clinical", (1, 0, 0, 0)),
+                        ("dermoscopy", (0, 1, 0, 0)),
+                        ("metadata", (0, 0, 1, 0)),
+                        ("all+text", (1, 1, 1, 1))]:
         model.eval(); P, Y = [], []
         with torch.no_grad():
             for b in loaders["test"]:
                 bb = {k: (v.to(dev) if torch.is_tensor(v) else v) for k, v in b.items()}
                 bb["has_image"] = bb["has_image"] * flags[0]
-                bb["has_meta"] = bb["has_meta"] * flags[1]
-                bb["has_text"] = bb["has_text"] * flags[2]
+                bb["has_dermoscopy"] = bb["has_dermoscopy"] * flags[1]
+                bb["has_meta"] = bb["has_meta"] * flags[2]
+                bb["has_text"] = bb["has_text"] * flags[3]
                 with torch.cuda.amp.autocast(enabled=cfg["AMP"] and dev.type == "cuda"):
                     o = model(bb)
                 P.append(o["prob"].float().cpu()); Y.append(b["label"])
@@ -721,7 +1008,8 @@ def run(cfg):
         "config": cfg, "best_epoch": best_epoch, "best_val_macro_f1": best_f1,
         "meta_dim": meta_dim, "class_names": CLASS_NAMES,
         "n": {k: len(v) for k, v in splits.items()},
-        "patients": {k: int(v["patient_id"].nunique()) for k, v in splits.items()},
+        "groups": {k: int(v[group_key].nunique()) for k, v in splits.items()},
+        "group_key": group_key,
         "versions": {"python": platform.python_version(), "torch": torch.__version__,
                      "numpy": np.__version__, "pandas": pd.__version__},
         "notes": "Patient-level disjoint splits. Metrics as measured; no clipping, "
@@ -743,5 +1031,34 @@ def run(cfg):
     return results
 
 
+def apply_env_overrides(cfg):
+    """Let any CFG key be overridden by DGUARD_<KEY> in the environment.
+
+    Exists so the exact same file can be smoke-tested on a CPU box before it is
+    handed to a GPU. Example:
+
+        DGUARD_EPOCHS=1 DGUARD_LIMIT_LESIONS=80 DGUARD_AMP=0         DGUARD_DATA_DIR=milk10k python notebooks/kaggle_train_dguard.py
+    """
+    cfg = dict(cfg)
+    for key in list(cfg) + ["LIMIT_LESIONS"]:
+        raw = os.environ.get(f"DGUARD_{key}")
+        if raw is None:
+            continue
+        cur = cfg.get(key)
+        if isinstance(cur, bool):
+            val = raw.strip().lower() in ("1", "true", "yes", "on")
+        elif isinstance(cur, int) and not isinstance(cur, bool):
+            val = int(raw)
+        elif isinstance(cur, float):
+            val = float(raw)
+        elif isinstance(cur, tuple):
+            val = tuple(float(x) for x in raw.split(","))
+        else:
+            val = int(raw) if key == "LIMIT_LESIONS" else raw
+        cfg[key] = val
+        print(f"[override] {key} = {val!r}")
+    return cfg
+
+
 if __name__ == "__main__":
-    run(CFG)
+    run(apply_env_overrides(CFG))

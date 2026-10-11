@@ -1,0 +1,146 @@
+# DERMA-GUARD v4.0 - base configuration
+#
+# Dataset: PAD-UFES-20 only. There is no Derm7pt in this project and no
+# dermoscopy imagery: PAD-UFES-20 is 2298 smartphone photographs from 1373
+# patients across 6 classes.
+#
+# IMPORTANT: label_map.multiclass below MUST match src/constants.CLASS_NAMES,
+# which is the ordering the trained classifier heads were fitted against.
+# tests/test_config.py asserts this. Do not reorder it here.
+
+defaults:
+  - model/specialists
+  - model/text/clinicalbert
+  - model/fusion/adaptive
+  - data/pad_ufes
+  - _self_
+
+project:
+  name: derma-guard
+  version: "4.0"
+  seed: 42
+
+# ---------------------------------------------------------------------------
+# Classes - authoritative ordering lives in src/constants.py
+# ---------------------------------------------------------------------------
+label_map:
+  multiclass:
+    BCC: 0   # Basal Cell Carcinoma
+    ACK: 1   # Actinic Keratosis
+    NEV: 2   # Nevus
+    SEK: 3   # Seborrheic Keratosis
+    SCC: 4   # Squamous Cell Carcinoma
+    MEL: 5   # Melanoma
+  malignant: [BCC, SCC, MEL]
+
+# ---------------------------------------------------------------------------
+# Modalities - the evidence mask, fusion weights and acquisition policy all
+# index this order (src/constants.MODALITIES).
+# ---------------------------------------------------------------------------
+modalities:
+  order: [clinical_image, dermoscopy_image, metadata, text]
+  dims:
+    clinical_image: 256      # trained image projector (img_proj.pt)
+    dermoscopy_image: 256    # same projector; never populated by PAD-UFES-20
+    metadata: 116            # engineered features from the fitted preprocessor
+    text: 256                # trained text projector (text_proj.pt)
+  always_unavailable: [dermoscopy_image]
+
+# ---------------------------------------------------------------------------
+# Data
+# ---------------------------------------------------------------------------
+data:
+  raw_images: "data/raw/images"
+  raw_metadata: "data/raw/metadata.csv"
+  clinical_texts: "Dummy/Project/data/generated_clinical_texts.csv"
+  processed_dir: "data/processed"
+  splits_dir: "data/splits"
+  splits_file: "data/splits/padufes_splits.json"
+  interim_dir: "data/interim"
+
+# ---------------------------------------------------------------------------
+# Trained artifacts
+# ---------------------------------------------------------------------------
+weights:
+  # Overridden by the DERMA_GUARD_WEIGHTS environment variable.
+  dir: "Dummy/Project/saved_models"
+  image_projector: "img_proj.pt"
+  text_projector: "text_proj.pt"
+  preprocessor: "preprocessor.pkl"
+  strict_load: true   # a mismatch between architectures.py and the checkpoint must fail loudly
+
+# ---------------------------------------------------------------------------
+# Training (for retraining under clean splits - see docs/evaluation_integrity.md)
+# ---------------------------------------------------------------------------
+training:
+  batch_size: 32
+  epochs: 100
+  lr: 1.0e-4
+  weight_decay: 0.05
+  gradient_clip: 1.0
+  mixed_precision: true
+  early_stopping:
+    patience: 10
+    monitor: val_macro_f1   # macro-F1, NOT loss
+    mode: max
+
+fusion:
+  max_iterations: 3
+  convergence_threshold: 0.05
+  diagnosis_adaptive: true
+  # false => closed-form log(Q*R*U) weighting. Only set true once the
+  # WeightLogitNetwork has actually been trained; an untrained one emits weights
+  # uncorrelated with the evidence.
+  use_learned_weighting: false
+
+consensus:
+  strong_threshold: 0.80     # Level 1 minimum fusion confidence
+  moderate_threshold: 0.50   # Level 2 minimum fusion confidence
+  min_agreement_level1: 3
+  min_agreement_level2: 2    # `>= 2`, not `== 2` - see docs/evaluation_integrity.md
+  quality_threshold: 0.30
+  conflict_consistency_threshold: 0.30
+
+evidence:
+  k_neighbors: 8
+  ood_threshold: 50.0
+  reliability_weights:
+    certainty: 0.40
+    agreement: 0.30
+    quality: 0.20
+    stability: 0.10
+  image_quality_weights:
+    blur_score: 0.25
+    brightness: 0.15
+    contrast: 0.20
+    resolution_ratio: 0.25
+    occlusion_score: 0.15
+
+retrieval:
+  # Concatenated PER-MODALITY embeddings, never a fused one (proj.md Part 10).
+  index_dim: 884   # 256 + 256 + 116 + 256
+  k: 8
+
+llm:
+  model: "qwen2.5:7b"
+  base_url: "http://localhost:11434"
+  max_tokens: 512
+  timeout: 30
+  temperature: 0.0
+  max_retries: 2
+
+stress:
+  n_conditions: 18
+  cache_dir: "outputs/stress/cache"
+  seed: 42
+
+tracking:
+  wandb:
+    enabled: false
+    project: "derma-guard-v4"
+  mlflow:
+    enabled: false
+    tracking_uri: "http://localhost:5001"
+  tensorboard:
+    enabled: true
+    log_dir: "outputs/logs"
