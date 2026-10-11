@@ -5,8 +5,9 @@ implementation replaces most of these with hand-tuned formulas
 ([01_system_analysis.md](01_system_analysis.md)); this document gives the derivation
 each one should have.
 
-**Citation note.** Attributions are from memory and unverified. Check every one against
-the published paper before use in a submission.
+**Citation note.** The evidential, DS and risk-control citations here were verified on
+2026-10-11 — see [09_literature_and_benchmarks.md](09_literature_and_benchmarks.md).
+One error was found and fixed: the Conformal Risk Control author list.
 
 ---
 
@@ -249,7 +250,7 @@ meaningful quantity, and the one the current implementation reports without any 
 
 Two options, in increasing rigour.
 
-**(a) Conformal Risk Control** (**Angelopoulos, Bates, Candès, Jordan, Lei**). For a
+**(a) Conformal Risk Control** (**Angelopoulos, Bates, Fisch, Lei & Schuster**). For a
 risk that is monotone non-increasing in `λ` and bounded by `B`, pick
 
 ```
@@ -260,7 +261,8 @@ on `n` calibration points; then `E[R(λ̂)] ≤ α`. Simple, but the guarantee i
 expectation**, and note that selective risk is *not* in general monotone in `λ` because
 the denominator moves — so apply CRC to the un-normalised risk, or use (b).
 
-**(b) Learn-then-Test** (**Angelopoulos, Bates et al.**). Treat each `λ` on a finite grid
+**(b) Learn then Test** (**Angelopoulos, Bates, Candès, Jordan & Lei**, *Annals of
+Applied Statistics*, 2025). Treat each `λ` on a finite grid
 as a hypothesis `H_λ : R(λ) > α`, compute a valid p-value per `λ` (Hoeffding–Bentkos
 bound on the bounded loss), and reject with fixed-sequence testing from the most
 conservative `λ` downward. This yields the high-probability statement
@@ -270,6 +272,11 @@ P( R(λ̂) ≤ α ) ≥ 1 − δ
 ```
 
 distribution-free, with no monotonicity assumption. **Use this one.**
+
+Confirmed by the LTT paper's own motivation: it exists precisely because earlier methods
+*required* `λ` to be one-dimensional and the risk monotone in `λ`. Selective risk is not
+monotone, so CRC alone is insufficient here. An LTT-style risk-control module ships in
+**MAPIE** — prefer it to hand-rolling the p-values.
 
 ### 5.3 Class-conditional (Mondrian) calibration, and its honest limit
 

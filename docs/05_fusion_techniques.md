@@ -5,7 +5,9 @@ distributions, with weights from a hand-tuned formula. That is one point in a la
 design space, and not an obviously good one. This document lays out the space, states
 the selection criteria that follow from *this* dataset, and commits to a choice.
 
-**Citation note.** Attributions from memory, unverified. Check before citing.
+**Citation note.** MetaBlock, TMC and EDL verified 2026-10-11 — see
+[09_literature_and_benchmarks.md](09_literature_and_benchmarks.md). The fusion-survey
+citations (TFN, LMF, MulT, GMU, MVAE, MoPoE) remain unverified but are low-risk.
 
 ---
 
@@ -80,8 +82,8 @@ because it cannot feed a calibrated deferral rule.
 
 ### 2.4 MetaBlock / MetaNet — the dermatology-specific baseline
 
-**MetaBlock** (**Pacheco & Krohling, IEEE JBHI 2021**) conditions image feature maps on
-metadata, roughly
+**MetaBlock** (**Pacheco & Krohling, IEEE JBHI 25(9):3554-3563, 2021**) conditions image
+feature maps on metadata, roughly
 
 ```
 z_img' = tanh( z_img ⊙ f(z_meta) + g(z_meta) )
@@ -134,7 +136,9 @@ semester.
 
 Per-modality Dirichlet evidence, combined with the DS rule
 ([04 §2–3](04_mathematical_foundations.md)). Trusted Multi-View Classification
-(**Han et al., ICLR 2021**) is the reference.
+(**Zongbo Han, Changqing Zhang, Huazhu Fu & Joey Tianyi Zhou, ICLR 2021**,
+arXiv:2102.02051) is the reference; it combines **at the evidence level**, which is
+exactly the operator described here.
 
 Scored against the four constraints from §1:
 

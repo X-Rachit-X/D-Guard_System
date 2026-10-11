@@ -57,7 +57,9 @@ CFG = dict(
     TEXTS_CSV="generated_clinical_texts.csv",   # optional; skipped if absent
     OUT_DIR="/kaggle/working/dguard_out",
 
-    IMAGE_BACKBONE="resnet50",                  # resnet50 | efficientnet_b0 | convnext_tiny
+    # dermlip_panderm is RECOMMENDED (dermatology foundation model, public weights).
+    # Requires: pip install open_clip_torch, and an HF token -- the repo is gated.
+    IMAGE_BACKBONE="resnet50",   # resnet50 | efficientnet_b0 | convnext_tiny | dermlip_panderm
     IMAGE_SIZE=224,
     EMBED_DIM=256,
 
@@ -264,7 +266,39 @@ class DermDataset(Dataset):
 # =============================================================================
 # MODEL — evidential heads + Dempster-Shafer combination
 # =============================================================================
+class _DermLIPVisual(nn.Module):
+    """Vision tower of DermLIP_PanDerm, exposed as a plain feature extractor."""
+
+    def __init__(self, repo):
+        super().__init__()
+        import open_clip
+        self.clip, _, self.preprocess = open_clip.create_model_and_transforms(f"hf-hub:{repo}")
+        self.clip.eval()
+
+    def forward(self, x):
+        return self.clip.encode_image(x)
+
+
 def build_image_backbone(name):
+    """Returns (module, feature_dim).
+
+    `dermlip_panderm` is a dermatology FOUNDATION model (PanDerm, Nature Medicine 2025),
+    self-supervised on >2M skin images. Strongly preferred over ImageNet weights: frozen
+    ImageNet ResNet50 features reach only ~0.48 macro-F1 on this task, vs ~0.65 for
+    metadata alone, so the image pathway is encoder-limited.
+
+    Three caveats, all real:
+      * the HF repo is GATED -- accept the terms on the model page and provide an HF
+        token (Kaggle: Add-ons -> Secrets -> HF_TOKEN). The original implementation of
+        this project failed silently here and fell back to ImageNet.
+      * licence is non-commercial and labelled inconsistently (cc-by-nc-4.0 in the repo
+        metadata, CC-BY-NC-ND-4.0 in the model details). "ND" arguably forbids
+        fine-tuning, so LINEAR PROBING is the safer reading -- set
+        WARMUP_FROZEN_EPOCHS >= EPOCHS to keep the tower frozen throughout.
+      * PanDerm's pretraining corpus spans 11 institutions. CHECK whether PAD-UFES-20 is
+        in it before claiming a clean result -- otherwise a linear probe is partly
+        train-on-test.
+    """
     import torchvision.models as tvm
     if name == "resnet50":
         m = tvm.resnet50(weights=tvm.ResNet50_Weights.IMAGENET1K_V2)
@@ -275,8 +309,14 @@ def build_image_backbone(name):
     elif name == "convnext_tiny":
         m = tvm.convnext_tiny(weights=tvm.ConvNeXt_Tiny_Weights.DEFAULT)
         d = 768; m.classifier[2] = nn.Identity()
+    elif name == "dermlip_panderm":
+        # pip install open_clip_torch ; huggingface-cli login
+        m = _DermLIPVisual("redlessone/DermLIP_PanDerm-base-w-PubMed-256")
+        with torch.no_grad():
+            d = m(torch.zeros(1, 3, 224, 224)).shape[-1]
+        print(f"[backbone] DermLIP_PanDerm loaded, feature dim {d}")
     else:
-        raise ValueError(name)
+        raise ValueError(f"unknown IMAGE_BACKBONE {name!r}")
     return m, d
 
 

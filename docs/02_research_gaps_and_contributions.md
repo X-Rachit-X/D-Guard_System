@@ -3,10 +3,11 @@
 > Companion to [01_system_analysis.md](01_system_analysis.md) (what exists today) and
 > [04_mathematical_foundations.md](04_mathematical_foundations.md) (the formal machinery).
 >
-> **Citation note.** Author/venue attributions below are from memory and were not
-> verified against the published papers while writing this document. Every citation
-> must be checked against the actual paper before it appears in a submission. Claims
-> marked **[verify]** are ones I am least certain about.
+> **Citation note.** Key citations here were verified on 2026-10-11 against primary
+> sources — see **[09_literature_and_benchmarks.md](09_literature_and_benchmarks.md)**,
+> which also records two claims of mine that turned out to be WRONG (PanDerm weight
+> availability, and the Conformal Risk Control author list). Remaining `[verify]` marks
+> are long-established results: low-risk, but still unchecked.
 
 ---
 
@@ -37,9 +38,9 @@ benchmarks, **not** to dermatology with patient-authored text and missing modali
 
 **(d) Selective prediction and conformal methods.** Chow's rule (1970) gives the
 optimal reject threshold under known costs. Conformal prediction (Vovk, Gammerman &
-Shafer) gives distribution-free coverage; **conformal risk control** and
-**Learn-then-Test** (Angelopoulos, Bates et al.) extend this to bounding arbitrary
-risks — including the error rate *among accepted cases*, which is exactly the clinical
+Shafer) gives distribution-free coverage; **conformal risk control** (Angelopoulos,
+Bates, Fisch, Lei & Schuster) and **Learn then Test** (Angelopoulos, Bates, Candès,
+Jordan & Lei, *Ann. Appl. Stat.* 2025) extend this to bounding arbitrary risks — including the error rate *among accepted cases*, which is exactly the clinical
 quantity of interest. Mondrian/class-conditional conformal prediction gives per-class
 guarantees.
 
@@ -190,7 +191,7 @@ The proposal above deliberately **narrows** scope:
 | Keep | Drop | Reason |
 |---|---|---|
 | PAD-UFES-20, 6-class | Derm7pt | One dataset done rigorously beats two done partially. Derm7pt also needs dermoscopy, which PAD-UFES lacks, so the two never shared a pipeline |
-| A–G specialist ladder as **baselines** | DermLIP-PanDerm, PanDerm, Swin-Tiny ×2, ResNet152 | PanDerm weights are unpublished **[verify]**; the environment is CPU-only; these shipped with random heads and voted on noise |
+| A–G specialist ladder as **baselines**; **DermLIP_PanDerm as the image encoder** | the five-model *ensemble*, Swin-Tiny ×2, ResNet152 | **Correction: PanDerm weights ARE published** (Nature Medicine 2025; HF `redlessone/DermLIP_PanDerm-base-w-PubMed-256`, the exact id in proj.md). The repo is *gated*, which is why the old code silently fell back. The five-model ensemble stays dropped (CPU-only, random heads, voting on noise), but DermLIP should be **adopted** as the image encoder — see [09_literature_and_benchmarks.md](09_literature_and_benchmarks.md) §4 |
 | MetaBlock as the literature baseline | — | It is the reference method on this exact dataset and must be beaten or matched honestly |
 | DERMA-STRESS | — | Genuine contribution |
 | Patient-level splits, focal loss, TensorBoard, local Ollama, $0 cost | — | All sound choices from v1 |

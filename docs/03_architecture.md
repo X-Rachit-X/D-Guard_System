@@ -199,7 +199,7 @@ Two shape facts worth writing down, because both have already caused bugs:
 | Dropped | Reason |
 |---|---|
 | Derm7pt dataset | Needs dermoscopy, which PAD-UFES lacks; the two never shared a pipeline. One dataset done rigorously beats two done partially |
-| DermLIP-PanDerm, PanDerm | Weights unpublished/unavailable **[verify]**; shipped with random heads and voted on noise |
+| ~~DermLIP-PanDerm, PanDerm~~ — **RETAINED as the image encoder** | **Correction:** weights are published (Nature Medicine 2025; HF `redlessone/DermLIP_PanDerm-base-w-PubMed-256`). The repo is *gated*, which is why the old code fell back silently. A dermatology foundation model is the obvious fix for the 0.477 image macro-F1 — see [09](09_literature_and_benchmarks.md) §4 |
 | Swin-Tiny ×2, ResNet152 | CPU-only environment; untrained heads. Superseded by one fine-tuned backbone |
 | LLM orchestration as a *scientific* claim | Kept as engineering. Attributing diagnostic credit to the LLM would be unsupportable — it writes reports, it does not diagnose |
 | Conformal prediction *as originally dropped* | **Reinstated**, upgraded to conformal risk control |

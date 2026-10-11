@@ -184,6 +184,7 @@ with [`notebooks/kaggle_train_dguard.py`](notebooks/kaggle_train_dguard.py)
 | [06_retrieval_design.md](docs/06_retrieval_design.md) | kNN + literature retrieval, with the evidence firewall |
 | [07_experimental_protocol.md](docs/07_experimental_protocol.md) | Hypotheses, ablations, statistics, 14-week plan |
 | [08_kaggle_training.md](docs/08_kaggle_training.md) | GPU training and what to send back |
+| [09_literature_and_benchmarks.md](docs/09_literature_and_benchmarks.md) | **Verified citations, comparable published numbers, two corrections** |
 | [evaluation_integrity.md](docs/evaluation_integrity.md) | **Audit findings — read before trusting any old number** |
 | [limitations.md](docs/limitations.md) · [what_did_not_work.md](docs/what_did_not_work.md) | Honest negative results |
 
@@ -218,15 +219,44 @@ system — that is a publishable negative result, and
 
 ---
 
-## Citations
+## Where we stand against the literature
 
-All attributions in these docs were written **from memory and are unverified**. Every one
-must be checked against the published paper before appearing in a submission; items
-marked **[verify]** are the least certain. Key works relied upon: PAD-UFES-20 (Pacheco et
-al.), MetaBlock (Pacheco & Krohling), Evidential Deep Learning (Sensoy et al.), Trusted
-Multi-View Classification (Han et al.), Dempster–Shafer theory (Dempster; Shafer),
-conformal risk control / Learn-then-Test (Angelopoulos, Bates et al.), Chow's rule
-(Chow).
+Key citations were **verified against primary sources on 2026-10-11** —
+[docs/09_literature_and_benchmarks.md](docs/09_literature_and_benchmarks.md), which also
+records two claims of mine that were **wrong**.
+
+| | Ours (patient-level, 3 seeds) | Published |
+|---|---|---|
+| metadata only | macro-F1 0.648 | XGBoost **0.746** ([TRACE](https://arxiv.org/pdf/2411.08701)) |
+| image + metadata | macro-F1 0.653 | CNN+MetaBlock BACC 0.770 |
+| 6-class | macro-F1 0.653 | DiffMIC BACC 0.646 |
+
+Ours sit below published metadata results, as expected: they are deliberately weak
+*frozen-feature linear probes*, on a **stricter patient-level split** (several published
+results do not state patient-level grouping, and this dataset has 1641 lesions from 1373
+patients — an image-level split leaks a patient's other lesions). There is clear headroom.
+
+**Biggest available win.** The image pathway is encoder-limited (0.477 with frozen
+ImageNet). **DermLIP_PanDerm** — the dermatology foundation model from
+[PanDerm, *Nature Medicine* 2025](https://arxiv.org/abs/2410.15038), self-supervised on
+>2M skin images — has **public weights** at
+[`redlessone/DermLIP_PanDerm-base-w-PubMed-256`](https://huggingface.co/redlessone/DermLIP_PanDerm-base-w-PubMed-256),
+which is the exact repo id `proj.md` specified. The original code never loaded it because
+**the repo is gated**. Supported in the Kaggle script via
+`IMAGE_BACKBONE="dermlip_panderm"`.
+
+Caveats: gated (needs HF token), non-commercial licence labelled inconsistently
+(CC-BY-NC vs CC-BY-NC-**ND** — "ND" arguably forbids fine-tuning, so prefer linear
+probing), and **check whether PAD-UFES-20 is in PanDerm's pretraining corpus** before
+claiming a clean result.
+
+Verified: PAD-UFES-20 (Pacheco et al., *Data in Brief* 32:106221, 2020) · MetaBlock
+(Pacheco & Krohling, *IEEE JBHI* 25(9):3554–3563, 2021) · Evidential Deep Learning
+(Sensoy, Kaplan & Kandemir, NeurIPS 2018) · Trusted Multi-View Classification (Zongbo Han
+et al., ICLR 2021) · Learn then Test (Angelopoulos, Bates, Candès, Jordan & Lei, *Ann.
+Appl. Stat.* 2025) · PanDerm (Yan et al., *Nature Medicine* 2025).
+Still unverified (low-risk): Dempster, Shafer, Jøsang, Chow, and the fusion-survey
+citations.
 
 **Licence / data:** PAD-UFES-20 is CC BY 4.0. No patient data is committed to this
 repository.

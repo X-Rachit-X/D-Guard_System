@@ -172,8 +172,8 @@ retrieval to weight the calibration set by similarity to the query, giving an
 λ̂(x) = quantile over calibration points, weighted by  k(x, xᵢ)
 ```
 
-Guarantees for localised conformal prediction exist in the literature under
-weighted-exchangeability arguments (**[verify]** — check the localised/weighted conformal
+Guarantees for localised conformal prediction exist under weighted-exchangeability
+arguments (**still unverified as of 2026-10-11** — check the localised/weighted conformal
 literature carefully before claiming this, the conditions are subtle and easy to state
 incorrectly).
 

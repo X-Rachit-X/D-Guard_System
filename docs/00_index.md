@@ -13,6 +13,7 @@
 | 6 | [06_retrieval_design.md](06_retrieval_design.md) | kNN retrieval as a conformity score; literature retrieval behind an evidence firewall |
 | 7 | [07_experimental_protocol.md](07_experimental_protocol.md) | Hypotheses H1–H5, ablations, statistics, 14-week plan |
 | 8 | [08_kaggle_training.md](08_kaggle_training.md) | GPU training, what to send back, expected results |
+| 9 | **[09_literature_and_benchmarks.md](09_literature_and_benchmarks.md)** | **Verified citations, comparable published numbers, and two corrections to my earlier claims** |
 
 ## Supporting
 
@@ -56,3 +57,11 @@ since frozen ImageNet features reach only 0.477 macro-F1. See doc 8.
 
 **What is genuinely novel?** The integration and the benchmark, not the individual
 techniques. Doc 2 §6 is explicit about this.
+
+**How do our numbers compare to published work?** Below published metadata results
+(XGBoost macro-F1 0.746 vs our 0.648) — because ours are deliberately weak frozen-feature
+linear probes on a *stricter* patient-level split. Doc 9 §2.
+
+**Biggest single improvement available?** Replace ImageNet ResNet50 with
+**DermLIP_PanDerm**, a dermatology foundation model pretrained on 2M images, whose
+weights are public. Doc 9 §4.
