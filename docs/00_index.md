@@ -31,7 +31,6 @@ guarantee that v1 had and the v4 spec discarded. It **supersedes** all earlier d
 | [limitations.md](limitations.md) | Known limitations |
 | [what_did_not_work.md](what_did_not_work.md) | Negative results, including the measured failure of the text modality |
 | [results/baseline_probe.json](results/baseline_probe.json) | Raw honest-baseline output, 3 seeds |
-| [specs_v2/](specs_v2/) | The v2.0 specification and literature survey this consolidates |
 
 ---
 
