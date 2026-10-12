@@ -870,6 +870,14 @@ elif role == "Research":
                                                  if not isinstance(v, list)}}), width="stretch")
         else:
             st.info("Run scripts/run_shift_pad.py")
+        ps = load_json("outputs/analysis/pad_symptoms.json")
+        if ps:
+            st.markdown("**Do the scribe's warning signs mean anything?** PAD-UFES-20 "
+                        "questionnaire, one row per lesion (cancer = BCC, SCC, melanoma)")
+            dd = ps["definitions"]["PAD-UFES (BCC, SCC, MEL)"]["symptoms"]
+            st.dataframe(pd.DataFrame(dd).T[["n_yes", "mal_if_yes", "mal_if_no",
+                                             "relative_risk"]].astype(float).round(3),
+                         width="stretch")
     with t5:
         d7 = load_json("outputs/shift_derm7pt/report.json")
         if d7:

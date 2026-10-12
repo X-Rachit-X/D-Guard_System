@@ -264,7 +264,33 @@ not accurate, under shift.
 
 ## 7c. External test with dermoscopy — Derm7pt, no refitting
 
-<!-- DERM7PT -->
+Derm7pt (Kawahara et al., 2019): 1,003 lesions from an Italian atlas, each with a clinical
+photo **and** a dermoscopy image, so the whole loop runs as in the app — photo + details
+first, dermoscopy only if the system asks. Diagnoses map onto 6 MILK10k classes (NV 575,
+MEL 252, BKL 85, BCC 42, VASC 29, DF 20); sex and site only, no age.
+`scripts/run_shift_derm7pt.py`.
+
+| | MILK10k test | Derm7pt — D-GUARD flow | Derm7pt — always with dermoscopy |
+|---|---|---|---|
+| Cancer share | 72% | 29% | 29% |
+| Dermoscopy requested | 26% | **55%** | 100% |
+| Accuracy, all cases | 0.644 (photo) | 0.427 (photo only: 0.295) | 0.472 |
+| Cancer-vs-benign AUROC | 0.856 | 0.730 | 0.769 |
+| HIGH-confidence answers | 54% | **11%** | 17% |
+| Deferred | 10% | 14% | 4% |
+| Accuracy, HIGH tier | 0.769 | 0.566 (threshold: 0.745) | 0.655 |
+| Missed cancers, HIGH tier | 3.5% | **3.8%** (threshold: 3.8%) | 3.5% |
+
+**Read:**
+- **Asking for dermoscopy works under shift:** the photo stage asked for it for 55% of
+  lesions, and accuracy rose from 0.30 to 0.43.
+- **Safety holds** (3.8% missed among HIGH answers, inside the 5% target) because the
+  system answers confidently only 11% of the time — ignorance is high (0.80) and 29% of
+  photos fail the quality check (old atlas scans).
+- **The diagnosis does not transfer:** melanoma recall 33%, DF and VASC almost never right.
+  A confidence threshold at the same coverage is more accurate. Same picture as PAD-UFES:
+  safe, not accurate, on a new population.
+
 
 ---
 
@@ -278,6 +304,27 @@ not accurate, under shift.
 | Heads-level H1 (all three inputs ≥ best pair) | **not supported**: 0.379 vs 0.403 |
 | Post-hoc logit adjustment | helped val, **hurt test** — dropped |
 | Rare classes (BEN_OTH, INF, MAL_OTH) | never predicted |
+
+### Do the scribe's warning signs mean anything? (PAD-UFES-20 questionnaire)
+
+MILK10k has no symptoms, so the scribe's rule was checked on PAD-UFES-20, where patients
+answered *bleed / grew / changed / itch / hurt / raised* and every lesion has a diagnosis
+(1,641 lesions; cancer = BCC, SCC or melanoma; `scripts/analyze_pad_symptoms.py`):
+
+| Warning sign | Cancer if yes | Cancer if no | Relative risk (95% CI) |
+|---|---|---|---|
+| bleeding | 85.0% | 32.0% | 2.66 (2.43–2.91) |
+| rapid growth | 52.7% | 17.5% | 3.00 (2.51–3.59) |
+| change | 61.1% | 30.8% | 1.98 (1.67–2.35) |
+| itching | 52.8% | 32.1% | 1.65 (1.45–1.87) |
+| pain | 84.8% | 37.2% | 2.28 (2.09–2.48) |
+| raised (added to the scribe after this) | 60.1% | 21.1% | 2.84 (2.43–3.34) |
+| **any scribe warning sign** | **48.7%** | **12.4%** | **3.91 (2.77–5.52)** |
+
+Every sign raises the cancer rate, so raising *urgency* on them is justified. Caveats:
+questionnaire answers, not free text; a Brazilian referral population; and with
+MILK10k's wider cancer definition (adding actinic keratosis) growth and "raised" no longer
+point the same way. The signs change urgency only — never the diagnosis.
 
 ---
 

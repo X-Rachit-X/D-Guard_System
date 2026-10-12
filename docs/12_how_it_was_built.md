@@ -55,9 +55,10 @@ moved from 60.2% to 57.2% for v1. The new numbers are the ones reported.
 | 4 | The missed-cancer rate is **certified** by Learn-then-Test (α = 5%, δ = 10%) at both stages | λ̂ 0.212 / 0.365, p ≈ 0.08–0.10 | ✅ under exchangeability |
 | 5 | The learned Devil's Advocate (v2) is the best fusion rule on validation, and the best at stage A on test | 05_results §3 | ✅ stage A; ❌ stage B test (v1 better) |
 | 6 | The system notices damaged evidence | DERMA-STRESS: blur/dark/occlusion/noise flagged, missing details requested | ✅ (see §7 for what is left) |
-| 7 | It stays safe under distribution shift | PAD-UFES-20 and Derm7pt, no refitting | ✅ safety / ❌ fine diagnosis |
+| 7 | It stays safe under distribution shift | PAD-UFES-20: 0.0% missed (HIGH 14%); Derm7pt: 3.8% missed (HIGH 11%), dermoscopy asked for 55% and accuracy 0.30 → 0.43 | ✅ safety / ❌ fine diagnosis |
 | 8 | A learned rejector is as safe as our HIGH tier | p = 0.63, not different | ✅ reported against us |
 | 9 | Faster/cheaper than always answering | no — always answering has lower mean cost | ❌ reported against us |
+| 10 | The scribe's warning signs justify raising urgency | PAD-UFES-20 questionnaire: any sign → cancer 48.7% vs 12.4% (RR 3.9) | ✅ on another dataset |
 
 What we do **not** claim: clinical validity, beating the MILK10k challenge leaderboard,
 fairness for the lightest skin tones (too few cases), or more than one training seed until

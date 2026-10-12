@@ -452,7 +452,10 @@ requirement survive; otherwise the structured report is used.
 The \textbf{scribe} reads the patient's free-text description for warning signs
 (bleeding, growth, change, non-healing, itching or pain, a new lesion after 50), with
 negation handling; a warning sign raises triage urgency but never changes the diagnosis or
-the confidence tier, since the model has no text input.
+the confidence tier, since the model has no text input. On the PAD-UFES-20 questionnaire
+(1{,}641 lesions), lesions with any of these signs were malignant (BCC, SCC, melanoma) in
+48.7\% of cases against 12.4\% without (relative risk 3.9, 95\% CI 2.8--5.5); every single
+sign had a relative risk between 1.65 and 3.0, which supports their use for urgency.
 The \textbf{care platform} handles patient intake, dermoscopy requests, a clinician queue
 ordered by outcome and urgency (review, confirm, sign-off), confirm/override with
 instructions and follow-ups, follow-up re-assessment with change detection (an increase
@@ -801,6 +804,41 @@ Under this shift \dguard{} protects the decision that matters for safety but not
 fine-grained diagnosis.
 
 % =============================================================================
+\section{External Test with Dermoscopy: Derm7pt}\label{sec:derm7pt}
+
+PAD-UFES-20 has no dermoscopy, so it cannot exercise acquisition. Derm7pt
+\cite{kawahara2019derm7pt} pairs a clinical and a dermoscopic image for 1{,}003 lesions of
+six MILK10k classes (an Italian atlas; 29\% malignant; sex and site, no age). We ran the
+full loop without refitting: stage A on the photograph and metadata, the dermoscopic image
+supplied only when the system asked for it.
+
+\begin{table}[t]
+\centering
+\caption{The MILK10k system on Derm7pt, unchanged.}
+\label{tab:derm7pt}
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lcc}
+\toprule
+ & \dguard{} flow & Always stage B \\
+\midrule
+Dermoscopy requested & 55.4\% & 100\% \\
+Accuracy, all cases & 0.427 & 0.472 \\
+Malignant-vs-benign AUROC & 0.730 & 0.769 \\
+High-confidence answers & 10.6\% & 17.0\% \\
+Accuracy, high tier & 0.566 & 0.655 \\
+Missed malignancies, high tier & 3.8\% & 3.5\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The system asked for dermoscopy for 55\% of lesions, raising overall accuracy from 0.295
+(photograph only) to 0.427 (Table~\ref{tab:derm7pt}); mean stage-A ignorance was 0.80 and
+29\% of photographs failed the quality check, so only 10.6\% received a high-confidence
+answer, which missed 3.8\% of malignancies---within the 5\% target. Fine-grained diagnosis
+again did not transfer (melanoma recall 33\%), and max-softmax abstention at the same
+coverage was more accurate (0.745) at the same miss rate.
+
+% =============================================================================
 \section{Discussion and Negative Results}\label{sec:negative}
 
 \textbf{What the original design got right.} Re-weighting sources per case by evidence
@@ -847,8 +885,9 @@ coverage, not in throughput.
 \textbf{Learned deferral is as safe.} A learned rejector matches the high tier's miss
 rate (Sec.~\ref{sec:stats}).
 
-\textbf{Shift.} On PAD-UFES-20 the fine-grained diagnosis degrades to 49\% high-tier
-accuracy (Sec.~\ref{sec:shift}).
+\textbf{Shift.} On PAD-UFES-20 and Derm7pt the fine-grained diagnosis degrades to
+49\% and 57\% high-tier accuracy, while the high-tier miss rate stays within target
+(0.0\% and 3.8\%; Secs.~\ref{sec:shift}--\ref{sec:derm7pt}).
 
 \textbf{Rare classes.} Three classes with 1--6 test lesions are never predicted.
 

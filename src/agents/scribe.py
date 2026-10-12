@@ -26,6 +26,9 @@ RED_FLAGS = {
     "non-healing sore": r"\b(not heal\w*|won'?t heal|doesn'?t heal|ulcer\w*|open sore|crust\w*|scab\w*)\b",
     "itching or pain": r"\b(itch\w*|pain\w*|hurt\w*|sore|tender|burn\w*)\b",
     "new spot": r"\b(new|appeared|recently noticed|just noticed)\b",
+    # added after scripts/analyze_pad_symptoms.py: on PAD-UFES-20 a raised lesion is
+    # malignant (BCC/SCC/MEL) 60% of the time vs 21% for a flat one (RR 2.8)
+    "raised lump": r"\b(raised|lump\w*|bump\w*|nodul\w*|swollen)\b",
 }
 DURATION = r"\b(\d+)\s*(day|week|month|year)s?\b"
 NEGATION = r"\b(no|not|never|without|doesn'?t|don'?t|isn'?t|hasn'?t)\s+(\w+\s+){0,2}$"

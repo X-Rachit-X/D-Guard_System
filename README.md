@@ -41,6 +41,10 @@ External tests: **PAD-UFES-20** (phone photos) and **Derm7pt** (photo + dermosco
 - Missed-cancer bound **certified** by Learn-then-Test; shown confidences are **calibrated**.
 - **DERMA-STRESS:** blur, darkness, noise and occlusion are all caught by the quality agent
   (0 confident answers on damaged photos); a photo without details triggers a request.
+- **External tests, no refitting:** PAD-UFES-20 — 0 cancers missed among confident
+  answers (14% of patients); Derm7pt — the system asked for dermoscopy for 55% of lesions
+  (accuracy 0.30 → 0.43) and missed 3.8% among confident answers. The 11-class diagnosis
+  does not transfer; the safety decision does.
 - Reported against us: with the v2 fusion, a threshold is as safe and more accurate; always
   answering is cheaper on mean cost; one training seed (more on the way).
 
