@@ -80,7 +80,7 @@ and write. The platform routes. Only a doctor's recorded verdict overrides the e
 Queue order: review → confirm → sign-off; within each, URGENT first, then oldest.
 **URGENT** = P(malignant) ≥ 0.30 or a malignant class still in the conformal set.
 
-On the test set: HIGH 60.2% · LOW 29.4% · DEFER 10.4% · dermoscopy requested 27.3%.
+On the test set: HIGH 54.4% · LOW 35.1% · DEFER 10.5% · dermoscopy requested 26.3%.
 
 ---
 
@@ -151,7 +151,30 @@ until y is stable and weights move < 0.05
 ```
 
 a, b, g, ρ and a temperature are fitted on validation. The result feeds the decision
-policy; Dempster–Shafer ignorance and conflict still drive the gates. The app shows the
+policy; Dempster–Shafer ignorance and conflict still drive the gates.
+
+**Devil's Advocate v2 — the learned evidence gate** (`src/fusion/gating.py`). The EM
+fusion lets only Q·R, the prior and agreement move the weights. v2 gives every specialist
+a feature vector — log Q, log R, U, confidence, margin, agreement, track record for the
+provisional diagnosis, consistency C, missingness M, OOD distance — and learns
+`w_m = softmax(β_m + θ_m·φ_m)` by minimising validation log-loss. **Seven rules** are fitted
+the same way (`src/fusion/methods.py`): average, original formula, best head, EM v1,
+stacking, gate (mixture), gate (product). All are **cross-fitted**; the best out-of-fold
+validation macro-F1 is picked (the learned gate, both stages); every subset of specialists
+is scored; an oracle gives the ceiling. The app's *Compare systems* view runs all of them
+on one lesion.
+
+**Asking for more evidence** — three kinds:
+| Request | When | Where |
+|---|---|---|
+| dermoscopy | expected cost of answering now > cost of asking (learned benefit ĥ) | policy |
+| patient details | no age / sex / site **and** no dermoscopy | `src/agents/pipeline.py` |
+| a better photo | a severe quality issue (blur, light, grain, covered centre, glare) | pipeline + app retake box |
+
+**Explainer** (`src/agents/explainer.py`): who said what, why dissenting specialists
+disagree (measured track record, spread, quality, reliability, what they can see), where
+the weight went, what the confidence means. Optional LLM rewrite only if a verifier finds
+no invented diagnosis or percentage. The app shows the
 **calibrated** confidence (probability the stated diagnosis is right) and the **consensus
 level** of the original four-level hierarchy (1 strong · 2 moderate · 3 uncertain ·
 4 critical conflict).

@@ -19,6 +19,8 @@ Dermatology AI. Final version, 2026-10-11. Dataset: **MILK10k**.
 | 08 | [08_study_plan.md](08_study_plan.md) | 10-day learning plan + glossary |
 | 09 | [09_todo.md](09_todo.md) | what is left — nothing required |
 | 10 | [10_project_structure.md](10_project_structure.md) | folders, what was moved out |
+| 11 | [11_ui_guide.md](11_ui_guide.md) | **the app, view by view** — what every button does |
+| 12 | [12_how_it_was_built.md](12_how_it_was_built.md) | **how it was built and checked**; every claim → its evidence; FAQ (why is confidence low? why MILK10k? models B–G?) |
 
 Also: [what_did_not_work.md](what_did_not_work.md) · [limitations.md](limitations.md) ·
 the paper in [../paper/main.tex](../paper/main.tex).
@@ -45,11 +47,12 @@ the paper in [../paper/main.tex](../paper/main.tex).
 
 **Trained?** Yes. Nothing else is required to run it.
 
-**How often does it answer?** 9 in 10 patients: 60% HIGH confidence, 29% LOW confidence
+**How often does it answer?** 9 in 10 patients: 54% HIGH confidence, 35% LOW confidence
 (doctor confirms), 10% deferred because the evidence contradicts itself.
 
-**How good?** HIGH-confidence answers: 76% accurate on 11 classes, 3.0% missed cancers — vs
-9.3% for the standard approach at the same coverage. Team fusion: macro-F1 0.453.
+**How good?** HIGH-confidence answers: 77% accurate on 11 classes, 3.5% missed cancers.
+A confidence threshold on the same probabilities is as safe (3.5%) — but on the weaker v1
+fusion it missed 9.3% while D-GUARD stayed at 3.3%. Fusion: photo-only macro-F1 0.286 → 0.332.
 
 **Is fusion dynamic?** Yes — the old project's iterative diagnosis-adaptive fusion runs over
 a five-specialist team (including the original PAD-UFES Model A); each specialist's weight

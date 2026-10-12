@@ -278,6 +278,10 @@ class TeamBundle:
     q_ref_derm: np.ndarray
     confidence_calibrator: object = None   # isotonic: max fused p -> P(correct)
     report: Dict = field(default_factory=dict)
+    ctx_A: object = None              # src.fusion.methods.FusionContext per stage
+    ctx_B: object = None
+    method_A: str = "adaptive_em"     # combination rule picked on validation
+    method_B: str = "adaptive_em"
 
 
 def quality_score(q: np.ndarray, ref: np.ndarray) -> np.ndarray:

@@ -213,13 +213,23 @@ Then the **iterative diagnosis-adaptive fusion** (the original project's algorit
    is great for SCC, the photo for melanoma).
 3. Re-weight, penalise specialists that disagree, combine again. Stop when stable.
 
-Result: macro-F1 **0.376 → 0.453**. And a *plain average* of the same five is worse than
-the original fusion — the gain is in *how* they are weighted. The old Model A turns out to
-be weak on this dataset; the Devil's Advocate notices and gives it about 2% weight.
+Then **v2**: instead of a fixed formula, the Devil's Advocate *learns* how to turn all of
+its signals — quality, reliability, uncertainty, track record for this diagnosis,
+agreement, how unusual the case is — into weights, from validation lesions. Seven ways of
+combining are compared fairly (each fitted on 4/5 of validation, scored on the other 1/5),
+and the best on validation is used. Photo-only macro-F1: **0.286 → 0.332**.
+
+A *plain average* of the same five is the worst rule — the gain is in *how* they are
+weighted. The old Model A is weak on this dataset; every learned rule gives it 3–5% weight.
+
+**The surprise:** once the fusion is good, a simple "answer only when confident" rule is as
+safe as D-GUARD's policy (3.5% missed cancers each). With the weaker v1 fusion the simple
+rule missed 9.3% while D-GUARD still missed only 3.3%. D-GUARD's policy is **stable**; the
+simple rule is only as good as the probabilities under it.
 
 **Why confidence used to look low:** the probability of the top class is spread across 11
 classes. The app now shows a *calibrated* confidence — the probability that the stated
-diagnosis is actually right (77% on average with dermoscopy, against a real accuracy of 72%).
+diagnosis is actually right (74% on average with dermoscopy, against a real accuracy of 72%).
 
 ## Part 5 — Concept 4: Conformal prediction (a set with a guarantee)
 
@@ -319,8 +329,8 @@ patient waiting for a doctor with no information is a bad experience. So D-GUARD
 | **LOW** | a check fired | "Low-confidence assessment: X (52% likely). Not reliable enough to act on by itself — a doctor will confirm." + urgency |
 | **DEFER** | sources contradict | "A doctor must decide. Unconfirmed impression: X." |
 
-Results: **90% of patients get an answer, 60% a confident one.** HIGH answers: 76%
-accurate, 3.0% missed cancers. LOW answers: 51% exactly right, but the true diagnosis is in the top 3 for **82%** —
+Results: **90% of patients get an answer, 54% a confident one.** HIGH answers: 77%
+accurate, 3.5% missed cancers. LOW answers: 54% exactly right, but the true diagnosis is in the top 3 for **82%** —
 useful for the reviewing doctor, and never presented as certain.
 
 The promise from Part 6 applies to the HIGH tier, which is identical whether or not the LOW
@@ -339,7 +349,8 @@ Accuracy alone is wrong: a system that answers only easy cases looks perfect. So
   (0.0900 vs 0.0893).
 
 And we always compare at **matched coverage**: the standard approach, answering the same
-60% of patients, misses 9.3% of cancers; D-GUARD misses 3.0%.
+the same share of patients misses 9.3% of cancers on the v1 fusion but 3.5% on v2 —
+D-GUARD misses 3.3% / 3.5%. (See [05_results.md](05_results.md) §5.)
 
 Code: `src/eval/selective.py`.
 

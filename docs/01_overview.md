@@ -13,15 +13,17 @@ and gives one of four outcomes:
 
 | Outcome | Meaning | Share of test patients |
 |---|---|---|
-| ✅ **Answer — HIGH confidence** | every safety check passed; calibrated answer | 60% |
+| ✅ **Answer — HIGH confidence** | every safety check passed; calibrated answer | 54% |
 | 📷 **Ask for dermoscopy** | a close-up through a skin lens is expected to help; then it answers | 27% (then answered) |
-| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 29% |
+| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 35% |
 | 🧑‍⚕️ **Defer** | the photo and the details point to *different* diagnoses — a human must decide | 10% |
 
-**9 in 10 patients get an answer and 6 in 10 a confident one.** HIGH-confidence answers are
-**76% accurate on 11 diagnoses** and miss **3.0%** of cancers, against **9.3%** for the
-standard approach at the same coverage. A **team of five specialists**, combined by the old
-project's iterative diagnosis-adaptive fusion, raises macro-F1 from 0.376 to **0.453**. Around it sits a care platform: patient app, doctor review queue,
+**9 in 10 patients get an answer and more than half a confident one.** HIGH-confidence
+answers are **77% accurate on 11 diagnoses** and miss **3.5%** of cancers — a rate that
+stays the same whichever fusion is used, while a plain confidence threshold ranges from
+9.3% to 3.5%. A **team of five specialists**, weighted by a learned Devil's Advocate
+(picked from seven rules on validation), raises photo-only macro-F1 from 0.286 to **0.332**.
+The system **asks** for a dermoscopy image, missing details or a better photo when needed. Around it sits a care platform: patient app, doctor review queue,
 instructions, questions, follow-ups with change detection, full audit log.
 
 ---
@@ -81,9 +83,10 @@ NV, SCCKA, VASC — of which 5 are malignant.
 | S5 similar-case vote | the 15 most similar training lesions |
 
 The **Devil's Advocate** profiles each one (quality Q, *learned* reliability R, uncertainty U,
-consistency C, missingness M, out-of-distribution distance). **Iterative
-diagnosis-adaptive fusion** — the old EM-style algorithm — combines them, using a
-diagnosis-conditioned trust table that is now *measured* instead of typed by hand. Details:
+consistency C, missingness M, out-of-distribution distance). Version 1 combines them with
+the old **iterative diagnosis-adaptive fusion** (trust table now *measured*); version 2
+**learns** how every signal should set the weights. Seven combination rules are compared
+under cross-fitting and the best on validation is used (v2). Details:
 [03_system.md](03_system.md) §4a, results: [05_results.md](05_results.md) §2–4.
 
 ## 4. The methodology (v3), in five steps

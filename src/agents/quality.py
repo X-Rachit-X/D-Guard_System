@@ -2,7 +2,7 @@
 src/agents/quality.py - Image-quality agent.
 
 Checks a photo BEFORE it is trusted: sharpness, exposure, contrast, glare and
-resolution. Carried over from the old system's evidence manager, with one change:
+resolution, graininess, and whether the middle of the photo is covered. Carried over from the old system's evidence manager, with one change:
 the thresholds are not hand-picked. They are the 5th / 95th percentiles of the
 same measurements on real MILK10k training photos, so "too blurry" means
 "blurrier than 95% of the photos the model learned from".
@@ -44,7 +44,31 @@ def measure(img: Image.Image) -> Dict[str, float]:
         "contrast": float(g.std()),
         "glare": float((g > 0.97).mean()),
         "min_side": float(min(img.size)),
+        "flat": flat_fraction(_centre(g)),
     }
+
+
+def _centre(g: np.ndarray) -> np.ndarray:
+    """Middle 60% of the photo - where the lesion is framed. Dermoscopy vignettes
+    and dark backgrounds are flat too, but they sit at the edges."""
+    h, w = g.shape
+    return g[h // 5: 4 * h // 5, w // 5: 4 * w // 5]
+
+
+def flat_fraction(g: np.ndarray, block: int = 8, tol: float = 0.004) -> float:
+    """Share of the (centre of the) photo covered by perfectly flat 8x8 blocks.
+
+    Real skin photos always carry sensor noise and texture, so a block whose
+    grey levels vary by less than ~1 step out of 255 is almost never skin: it is
+    a sticker, a finger in shadow, a black bar or a covered lens. This is the
+    occlusion detector (DERMA-STRESS showed occlusion was the one corruption the
+    other checks missed).
+    """
+    h, w = (g.shape[0] // block) * block, (g.shape[1] // block) * block
+    if h == 0 or w == 0:
+        return 0.0
+    b = g[:h, :w].reshape(h // block, block, w // block, block)
+    return float((b.std(axis=(1, 3)) < tol).mean())
 
 
 @dataclass
@@ -71,6 +95,10 @@ ADVICE = {
     "low contrast": "Make sure the spot fills more of the frame and is in focus.",
     "glare": "Tilt the camera slightly to avoid reflections on the skin.",
     "low resolution": "Move closer so the spot fills the middle of the photo.",
+    "grainy": "The photo is grainy - use more light so the camera does not boost "
+              "sensitivity, and avoid digital zoom.",
+    "covered": "Part of the photo is covered - make sure nothing (finger, sticker, "
+               "plaster) hides the spot.",
 }
 
 
@@ -87,7 +115,9 @@ class ImageQualityAgent:
     def fit(cls, image_paths: Sequence[str], cache: Optional[Path] = None) -> "ImageQualityAgent":
         """Fit thresholds from reference photos; cached to `cache` if given."""
         if cache is not None and Path(cache).exists():
-            return cls(json.loads(Path(cache).read_text()))
+            t = json.loads(Path(cache).read_text())
+            if ("flat_severe" in t and "sharpness_high_severe" in t) or not image_paths:
+                return cls(t)                    # older caches: refit below to add `flat`
         ms = [measure(Image.open(p)) for p in image_paths]
         arr = {k: np.array([m[k] for m in ms]) for k in ms[0]}
         t = {
@@ -99,10 +129,16 @@ class ImageQualityAgent:
             "min_side": 224.0,
             # severe = outside the 1st/99th percentile
             "sharpness_severe": float(np.percentile(arr["sharpness"], 1)),
+            # far too much fine detail = sensor noise / grain (DERMA-STRESS "noise")
+            "sharpness_high": float(np.percentile(arr["sharpness"], 95)),
+            "sharpness_high_severe": float(np.percentile(arr["sharpness"], 99)),
             "brightness_low_severe": float(np.percentile(arr["brightness"], 1)),
             "brightness_high_severe": float(np.percentile(arr["brightness"], 99)),
             "contrast_severe": float(np.percentile(arr["contrast"], 1)),
             "glare_severe": float(max(np.percentile(arr["glare"], 99), 0.05)),
+            # occlusion: real photos are almost never flat; floor keeps tiny patches legal
+            "flat_high": float(max(np.percentile(arr["flat"], 95), 0.05)),
+            "flat_severe": float(max(np.percentile(arr["flat"], 99), 0.10)),
             "n_reference": len(ms),
         }
         if cache is not None:
@@ -128,6 +164,10 @@ class ImageQualityAgent:
             issues.append("glare")
         if m["min_side"] < t["min_side"]:
             issues.append("low resolution")
+        if m.get("flat", 0.0) > t.get("flat_high", 0.05):
+            issues.append("covered")
+        if m["sharpness"] > t.get("sharpness_high", np.inf):
+            issues.append("grainy")
         severe = []
         if m["sharpness"] < t.get("sharpness_severe", t["sharpness_low"] / 2):
             severe.append("blurry")
@@ -141,7 +181,11 @@ class ImageQualityAgent:
             severe.append("glare")
         if m["min_side"] < t["min_side"]:
             severe.append("low resolution")
-        n_checks = 6
+        if m.get("flat", 0.0) > t.get("flat_severe", 0.10):
+            severe.append("covered")
+        if m["sharpness"] > t.get("sharpness_high_severe", np.inf):
+            severe.append("grainy")
+        n_checks = 8
         return QualityReport(ok=not issues, score=round(1 - len(issues) / n_checks, 3),
                              issues=issues, advice=[ADVICE[i] for i in issues],
                              measurements={k: round(v, 4) for k, v in m.items()},

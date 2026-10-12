@@ -89,6 +89,12 @@ CFG = dict(
     NUM_WORKERS=2,
     AMP=True,
     EARLY_STOP_PATIENCE=8,       # on val macro-F1, NOT loss
+
+    # ---- OPT-IN improvements (default OFF so seed runs stay comparable) ----
+    # Square-root class-balanced sampling: rare diagnoses (DF, VASC, INF, ...)
+    # are seen more often; the loss class weights are softened to their square
+    # root so the correction is not applied twice. Use run_improved(...) below.
+    BALANCED_SAMPLER=False,
 )
 
 # When this whole file is pasted into a notebook cell, `__name__ == "__main__"`
@@ -921,9 +927,21 @@ def _train_loop(cfg, splits, meta_mats, meta_dim, img_dir, out_dir, dev,
                 tokenizer, text_model, group_key="patient_id"):
     """Shared training / evaluation loop for both datasets."""
     loaders = {}
+    lab_col0 = "diagnostic" if "diagnostic" in splits["train"].columns else "label_idx"
     for k in ("train", "val", "test"):
         ds = DermDataset(splits[k], img_dir, meta_mats[k], tokenizer, k == "train", cfg)
-        loaders[k] = DataLoader(ds, batch_size=cfg["BATCH_SIZE"], shuffle=(k == "train"),
+        sampler = None
+        if k == "train" and cfg.get("BALANCED_SAMPLER"):
+            from torch.utils.data import WeightedRandomSampler
+            yk = (splits[k][lab_col0].map(CLASS_TO_IDX).values if lab_col0 == "diagnostic"
+                  else splits[k][lab_col0].values).astype(int)
+            cnt = np.bincount(yk, minlength=K).astype(float)
+            sw = 1.0 / np.sqrt(np.maximum(cnt, 1))[yk]
+            sampler = WeightedRandomSampler(torch.tensor(sw, dtype=torch.double),
+                                            num_samples=len(yk), replacement=True)
+            print("square-root class-balanced sampler ON")
+        loaders[k] = DataLoader(ds, batch_size=cfg["BATCH_SIZE"],
+                                shuffle=(k == "train" and sampler is None), sampler=sampler,
                                 num_workers=cfg["NUM_WORKERS"], pin_memory=True,
                                 drop_last=False)
 
@@ -934,6 +952,8 @@ def _train_loop(cfg, splits, meta_mats, meta_dim, img_dir, out_dir, dev,
     counts = np.bincount(train_labels.astype(int), minlength=K)
     class_w = torch.tensor(len(splits["train"]) / (K * np.maximum(counts, 1)),
                            dtype=torch.float32, device=dev)
+    if cfg.get("BALANCED_SAMPLER"):
+        class_w = class_w.sqrt()          # the sampler already does half the work
     print("class weights:", class_w.tolist())
 
     head_params = [p for n, p in model.named_parameters()
@@ -1131,6 +1151,22 @@ def run_seeds(seeds=(7, 2026), data_dir=None, **overrides):
         print(f"\n{'=' * 70}\nSEED {seed} -> {cfg['OUT_DIR']}\n{'=' * 70}")
         out[seed] = run(cfg)
     return out
+
+
+def run_improved(seed=42, data_dir=None, backbone="resnet50", **overrides):
+    """The recommended upgrades, all opt-in so they never change run_seeds():
+    square-root class-balanced sampling, 35 epochs with patience 10.
+    backbone="dermlip_panderm" also switches to the dermatology encoder (needs
+    HF_TOKEN; see run_dermlip for the licence note). Writes to its own folder.
+    """
+    cfg = dict(CFG)
+    cfg.update(SEED=seed, IMAGE_BACKBONE=backbone, BALANCED_SAMPLER=True, EPOCHS=35,
+               EARLY_STOP_PATIENCE=10,
+               OUT_DIR=f"/kaggle/working/dguard_milk_improved_{backbone}_s{seed}")
+    if data_dir:
+        cfg["DATA_DIR"] = data_dir
+    cfg.update(overrides)
+    return run(cfg)
 
 
 def run_dermlip(seed=42, data_dir=None, linear_probe=True, **overrides):

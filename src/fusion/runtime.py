@@ -2,8 +2,12 @@
 src/fusion/runtime.py - The specialist team for ONE case (used by the engine/app).
 
 Same arithmetic as scripts/run_team.py, applied to a single patient:
-five specialists -> Devil's Advocate profile (Q, R, U, C, M, OOD) -> iterative
-diagnosis-adaptive fusion -> calibrated confidence -> consensus level.
+five specialists -> Devil's Advocate profile (Q, R, U, C, M, OOD) -> the
+combination rule picked on validation (src/fusion/methods.py; v2 learned gate or
+v1 iterative EM) -> calibrated confidence -> consensus level.
+
+`compare(classes)` re-fuses the LAST case with every combination rule, for the
+app's Comparative-study view.
 """
 from __future__ import annotations
 
@@ -90,13 +94,28 @@ class TeamRuntime:
         Q = np.array(Q, dtype=float)[None]
         pres = np.array(pres)[None]
         R = mgr.reliability(P, Q, pres)
-        p, w, iters = fusion.fuse(P, Q * R, pres, return_trace=True)
-        p, w = p[0], w[0]
         consistency = float(js_consistency(P, pres)[0])
 
-        ood = False
+        ood, ood_dist = False, None
         if z.get("clinical") is not None and z.get("meta") is not None:
-            ood = bool(b.ood.flag(np.hstack([z["clinical"], z["meta"]])[None])[0])
+            zc = np.hstack([z["clinical"], z["meta"]])[None]
+            ood_dist = float(b.ood.score(zc)[0] / b.ood.threshold)
+            ood = ood_dist > 1.0
+
+        ctx = getattr(b, "ctx_B" if stage == "B" else "ctx_A", None)
+        method = getattr(b, "method_B" if stage == "B" else "method_A", "adaptive_em")
+        iters = np.zeros(1, dtype=int)
+        if ctx is not None:
+            from src.fusion.methods import fuse_method
+            ood_arr = None if ood_dist is None else np.array([ood_dist])
+            p, w = fuse_method(ctx, method, P, Q, pres, ood_arr)
+            if method == "adaptive_em":
+                _, _, iters = fusion.fuse(P, Q * R, pres, return_trace=True)
+        else:
+            p, w, iters = fusion.fuse(P, Q * R, pres, return_trace=True)
+        p, w = p[0], w[0]
+        self.last = dict(P=P, Q=Q, pres=pres, R=R, names=names, stage=stage,
+                         ood=None if ood_dist is None else np.array([ood_dist]))
 
         y = int(p.argmax())
         votes = {DISPLAY[n]: self.classes[int(P[0, i].argmax())]
@@ -116,9 +135,43 @@ class TeamRuntime:
                             for i, n in enumerate(names) if pres[0, i]},
             "votes": votes, "agreeing": agree, "n_specialists": int(pres.sum()),
             "consistency": consistency, "missingness": float(1 - pres.mean()),
-            "ood": ood, "iterations": int(iters[0]),
+            "ood": ood, "ood_distance": ood_dist, "iterations": int(iters[0]),
+            "method": method,
+            "probs": {DISPLAY[n]: [round(float(x), 4) for x in P[0, i]]
+                      for i, n in enumerate(names) if pres[0, i]},
+            # measured: how often this specialist was right on validation lesions of
+            # the class the team now believes (the original "diagnosis-adaptive prior")
+            "utility": {DISPLAY[n]: round(float(fusion.W_prior[y, i]), 3)
+                        for i, n in enumerate(names) if pres[0, i]},
+            "gate_importance": (b.report.get("gate_importance") or {}).get(stage, {}),
             "calibrated_confidence": conf_cal,
         }
+
+
+def compare_last(rt: "TeamRuntime") -> Dict[str, Dict]:
+    """Every combination rule on the most recent case: prediction, confidence, weights."""
+    from src.fusion.methods import LABELS, METHODS, fuse_method
+    L = rt.last
+    ctx = getattr(rt.bundle, "ctx_B" if L["stage"] == "B" else "ctx_A", None)
+    if ctx is None:
+        return {}
+    out = {}
+    for i, n in enumerate(L["names"]):
+        if L["pres"][0, i]:
+            p = L["P"][0, i]
+            out[f"Specialist alone: {DISPLAY[n]}"] = {
+                "prediction": rt.classes[int(p.argmax())], "confidence": float(p.max()),
+                "p_malignant": None, "weights": None, "prob": p}
+    for m in METHODS:
+        if m not in ctx.models and m in ("stacking", "gate_linear", "gate_log"):
+            continue
+        p, w = fuse_method(ctx, m, L["P"], L["Q"], L["pres"], L["ood"])
+        out[LABELS[m]] = {
+            "prediction": rt.classes[int(p[0].argmax())], "confidence": float(p[0].max()),
+            "weights": {DISPLAY[n]: round(float(w[0, i]), 3)
+                        for i, n in enumerate(L["names"]) if L["pres"][0, i]},
+            "prob": p[0]}
+    return out
 
 
 def consensus_level(decision, agreeing: int, n: int) -> int:

@@ -84,6 +84,7 @@ class NativeResult:
     quality: Dict[str, Optional[Dict]] = field(default_factory=dict)
     similar: Dict = field(default_factory=dict)
     report: Dict = field(default_factory=dict)
+    explanation: Dict = field(default_factory=dict)
 
     @property
     def action(self) -> str:
@@ -107,6 +108,7 @@ class NativeResult:
             "scribe": self.scribe,
             "similar": self.similar,
             "report": self.report,
+            "explanation": self.explanation,
         }
 
 

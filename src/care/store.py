@@ -301,6 +301,40 @@ class CareStore:
             r["detail"] = json.loads(r["detail"] or "{}")
         return rows
 
+    # ------------------------------------------------------------ deletion
+    _CASE_TABLES = ("evidence", "assessments", "reviews", "messages", "followups")
+
+    def delete_case(self, cid: int, actor: str = "patient") -> List[str]:
+        """Delete one case and everything attached to it. Returns stored file paths
+        so the service can remove uploaded images. The audit row keeps only the
+        fact of deletion - no content."""
+        paths = [e["path"] for e in self.evidence(cid) if e.get("path")]
+        for t in self._CASE_TABLES:
+            self._exec(f"DELETE FROM {t} WHERE case_id = ?", (cid,))
+        self._exec("DELETE FROM cases WHERE id = ?", (cid,))
+        self._exec("UPDATE audit SET detail = NULL WHERE case_id = ?", (cid,))
+        self.audit(None, actor, "CASE_DELETED", {"case_id": cid})
+        return paths
+
+    def delete_patient(self, pid: int, actor: str = "patient") -> List[str]:
+        """Right to erasure: the patient, all their cases, messages and images."""
+        paths: List[str] = []
+        for c in self.cases(patient_id=pid):
+            paths += self.delete_case(c["id"], actor)
+        self._exec("DELETE FROM patients WHERE id = ?", (pid,))
+        self.audit(None, actor, "PATIENT_DELETED", {"patient_id": pid})
+        return paths
+
+    def clear_messages(self, cid: int, actor: str = "patient") -> None:
+        self._exec("DELETE FROM messages WHERE case_id = ?", (cid,))
+        self.audit(cid, actor, "MESSAGES_CLEARED", {})
+
+    def reset_all(self, actor: str = "admin") -> None:
+        """Wipe every patient, case and message (demo reset). Keeps the schema."""
+        for t in self._CASE_TABLES + ("cases", "patients", "audit"):
+            self._exec(f"DELETE FROM {t}")
+        self.audit(None, actor, "DATABASE_RESET", {})
+
     def stats(self) -> Dict[str, Any]:
         def count(sql, args=()):
             return self._one(sql, args)["n"]

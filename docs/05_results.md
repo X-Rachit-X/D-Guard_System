@@ -1,9 +1,13 @@
 # Results
 
-Every number is produced by a script in the repository (§10). Dataset: MILK10k, 11 classes.
-Test split: 787 held-out lesions, scored once. Everything else — fusion weights, learned
-reliabilities, calibration, gates, thresholds — was fitted on the 786 validation lesions.
-Operating point: missed-cancer cost 5, minimal-deferral mode, quality and OOD gates on.
+Every number is produced by a script in the repository (§11). Dataset: MILK10k, 11 classes.
+Test split: 787 held-out lesions, scored once. Everything else — fusion rules and which one
+wins, learned reliabilities, calibration, gates, thresholds — was fitted on the 786
+validation lesions, with fusion rules **cross-fitted** (fit on 4/5, apply to the other 1/5)
+so the safety calibration never sees in-sample probabilities.
+Operating point: missed-cancer cost 5, minimal-deferral mode, quality / OOD /
+missing-details gates on. Fusion: the learned gate (Devil's Advocate v2), picked on
+validation.
 
 ---
 
@@ -11,18 +15,18 @@ Operating point: missed-cancer cost 5, minimal-deferral mode, quality and OOD ga
 
 | What patients get | Share | Accuracy (11 classes) | Missed cancers |
 |---|---|---|---|
-| ✅ **Answer — HIGH confidence** | **60.2%** | **76.2%** | **3.0%** |
-| 📷 Asked for dermoscopy first | 27.3% | (then answered) | |
-| ⚠️ Answer — LOW confidence (doctor confirms) | 29.4% | 51.5% · **top-3: 81.8%** | 14.7% |
-| 🧑‍⚕️ Deferred — evidence contradicts itself | 10.4% | — | — |
-| **Answered in total** | **89.6%** | | |
+| ✅ **Answer — HIGH confidence** | **54.4%** | **76.9%** | **3.5%** |
+| 📷 Asked for dermoscopy first | 26.3% | (then answered) | |
+| ⚠️ Answer — LOW confidence (doctor confirms) | 35.1% | 54.3% · **top-3: 81.5%** | 13.0% |
+| 🧑‍⚕️ Deferred — evidence contradicts itself | 10.5% | — | — |
+| **Answered in total** | **89.5%** | | |
 
-**Against the standard approach at the same 60.2% coverage:** missed cancers **3.0% vs 9.3%**
-(3.1× fewer), accuracy 76.2% vs 72.4%, mean cost 1.013 vs 1.037.
+**Against simple abstention on the same probabilities, same 54.4% coverage:** confidence
+threshold 3.5% missed (81.1% accurate), learned rejector 3.3% (77.8%). **Equally safe** —
+see §5 for why this is the most important finding.
 
-**Fusion:** the old design's iterative diagnosis-adaptive fusion over the full specialist
-team raises 11-class macro-F1 from **0.376 → 0.453** (+20% relative) over evidential
-fusion alone.
+**Fusion:** the learned Devil's Advocate wins on validation; photo-only macro-F1
+**0.286 → 0.332** over evidential fusion.
 
 ---
 
@@ -38,41 +42,60 @@ fusion alone.
 
 (test split, with dermoscopy available)
 
-- The **original Model A transfers poorly** to MILK10k (21.9%): it was trained on
-  smartphone photos from a different dataset. The evidence manager learns this on its
-  own and gives it a weight of **0.02–0.09**.
+- The **original Model A transfers poorly** (21.9%): trained on phone photos from another
+  dataset. Every learned rule gives it 0.03–0.05 weight without being told.
+- Models **B–G** of the old system cannot run on MILK10k — they need PAD-UFES's clinical
+  fields or text generated from them ([12_how_it_was_built.md](12_how_it_was_built.md) Part 4).
 - The **similar-case specialist is the strongest single source.**
 
 ---
 
-## 3. Fusion — the old design, rebuilt with learned parts
+## 3. Fusion — seven rules, cross-fitted, picked on validation
 
-| Method | Acc. | **Macro-F1** | Bal. acc. | Cancer AUROC |
-|---|---|---|---|---|
-| **With dermoscopy (stage B)** | | | | |
-| Dempster–Shafer (heads only) | 0.690 | 0.376 | 0.378 | **0.856** |
-| Simple average (whole team) | 0.661 | 0.317 | 0.311 | 0.845 |
-| Adaptive fusion (heads only) | 0.704 | 0.394 | 0.381 | 0.844 |
-| **Adaptive fusion (whole team)** | **0.718** | **0.453** | **0.423** | 0.848 |
-| **Photo + details (stage A)** | | | | |
-| Dempster–Shafer (heads only) | 0.644 | 0.286 | 0.280 | **0.799** |
-| Simple average (whole team) | 0.564 | 0.241 | 0.240 | 0.779 |
-| Adaptive fusion (heads only) | **0.645** | 0.269 | 0.269 | 0.794 |
-| **Adaptive fusion (whole team)** | 0.640 | **0.292** | **0.281** | 0.778 |
+`scripts/run_team.py`, `src/fusion/methods.py`. *Val* = out-of-fold macro-F1 on validation
+(used to choose); everything else is test.
+
+| Rule | Val | Acc. | **Macro-F1** | Bal. acc. | Cancer AUROC |
+|---|---|---|---|---|---|
+| **With dermoscopy (stage B)** | | | | | |
+| Dempster–Shafer (heads only) | 0.361 | 0.690 | 0.376 | 0.378 | 0.856 |
+| Simple average | 0.383 | 0.661 | 0.317 | 0.311 | 0.845 |
+| Original formula Q·R·U (learned R) | 0.420 | 0.710 | 0.440 | 0.408 | 0.855 |
+| Best head per case (highest R) | 0.397 | 0.717 | 0.409 | 0.388 | 0.825 |
+| Iterative diagnosis-adaptive EM (v1) | 0.397 | 0.718 | **0.453** | **0.423** | 0.848 |
+| Stacking (logistic regression) | 0.382 | 0.703 | 0.337 | 0.332 | 0.850 |
+| **Learned gate, mixture (v2) ← picked** | **0.471** | **0.719** | 0.418 | 0.393 | 0.861 |
+| Learned gate, product | 0.400 | 0.709 | 0.401 | 0.379 | **0.870** |
+| *Oracle best head (uses the label)* | — | 0.806 | 0.533 | | |
+| **Photo + details (stage A)** | | | | | |
+| Dempster–Shafer (heads only) | 0.274 | 0.644 | 0.286 | 0.280 | 0.799 |
+| Simple average | 0.221 | 0.564 | 0.241 | 0.240 | 0.779 |
+| Original formula Q·R·U | 0.316 | 0.648 | 0.324 | 0.307 | **0.821** |
+| Best head per case | 0.303 | 0.659 | 0.293 | 0.284 | 0.782 |
+| Iterative EM (v1) | 0.302 | 0.640 | 0.292 | 0.281 | 0.778 |
+| Stacking | 0.275 | 0.611 | 0.240 | 0.245 | 0.802 |
+| **Learned gate, mixture (v2) ← picked** | **0.340** | **0.661** | **0.332** | **0.314** | 0.820 |
+| Learned gate, product | 0.320 | 0.656 | 0.326 | 0.310 | 0.818 |
+| *Oracle best head* | — | 0.738 | 0.408 | | |
 
 **Read:**
-- A *simple average* of the same specialists is **worse** than Dempster–Shafer — the gain
-  comes from evidence-aware weighting, not from having more models.
-- The gain is large with dermoscopy (+0.077 macro-F1) and small without it.
-- Cancer-vs-benign AUROC is slightly lower than Dempster–Shafer (0.848 vs 0.856).
-- Fitted on validation: stage B `a=4, b=2, g=0.5, ρ=0.55, T=0.55`; mean weights on test —
-  dermoscopy 0.29, similar cases 0.30, details 0.22, photo 0.17, Model A 0.02.
-- Converges fast: 38% of cases need no refinement, 62% need one step.
+- The learned gate is best on validation in both stages and best on test without
+  dermoscopy. **With dermoscopy, v1 scores higher on test** (0.453 vs 0.418) — a validation
+  winner is not always the test winner when rare classes drive macro-F1. We keep the
+  pre-declared choice and report both.
+- A **plain average** is worst: the gain is in *how* specialists are weighted.
+- The **original formula**, once its reliability is learned, is a strong rule. In its old
+  form, C and S were equal for every specialist and cancelled out of the weights.
+- **Subset study** (all 15 / 31 combinations): no subset beats the full team by more than
+  0.015 on validation — every specialist is either useful or ignored safely.
+- The **oracle** ceiling (0.533) shows how much better per-case *selection* could be.
+- **Where the weight goes (v2, test):** similar cases 0.77, dermoscopy 0.11, photo 0.09,
+  Model A 0.03, details ≈0 (stage B). **What the gate listens to most:** track record for
+  the suspected diagnosis, OOD distance, quality, learned reliability.
+- **Calibrated confidence:** mean shown 0.742 vs actual accuracy 0.719 (stage B);
+  0.668 vs 0.661 (stage A).
 
 ### The diagnosis-adaptive prior, measured
-
-The old system typed in "how much to trust each source for each diagnosis". It is now
-measured on validation (how often each head alone names the true class):
 
 | Diagnosis | n | photo | dermoscopy | details |
 |---|---|---|---|---|
@@ -82,91 +105,92 @@ measured on validation (how often each head alone names the true class):
 | BKL | 70 | 0.17 | **0.31** | 0.00 |
 | MEL | 60 | **0.52** | 0.40 | 0.43 |
 | AKIEC | 32 | **0.06** | 0.03 | 0.00 |
-| VASC | 5 | 0.20 | **1.00** | 0.40 |
 
-(Melanoma: 0.52 measured vs 0.96 assumed by the old system.)
-
-### Calibrated confidence
-
-The raw fused probability of the top class is spread over 11 classes and always *looks*
-low. The app shows the **isotonic-calibrated probability that the stated diagnosis is
-correct** instead: on test, mean shown 0.770 vs actual accuracy 0.718 with dermoscopy;
-0.658 vs 0.640 without.
+(Melanoma: 0.52 measured vs 0.96 typed into the old system.)
 
 ---
 
 ## 4. Devil's Advocate evidence profile
 
-Per specialist and case: quality **Q**, learned reliability **R** (logistic regression on
-validation), uncertainty **U**, consistency **C** (Jensen–Shannon), missingness **M**, and
-**OOD** (Mahalanobis to nearest class, Ledoit–Wolf covariance, validation p99). On test,
-OOD flags **1.0%** of lesions; the OOD gate downgraded 2 HIGH answers and the quality gate
-27.
+Per specialist and case: quality **Q**, learned reliability **R**, uncertainty **U**,
+track record for the suspected diagnosis, confidence, margin, agreement, consistency
+**C**, missingness **M**, and **OOD** distance (Mahalanobis, Ledoit–Wolf, validation p99).
+In v2 all of them set the weights through a learned gate (`src/fusion/gating.py`).
+OOD flags **1.0%** of test lesions.
 
 ---
 
-## 5. Decision engine vs baselines (cost 5, team probabilities)
+## 5. Decision engine vs baselines (cost 5, learned-gate probabilities)
 
 | Policy | Answered (HIGH) | Dermoscopy | Acc. | Bal. acc. | **Missed cancers** | False alarms | Mean cost |
 |---|---|---|---|---|---|---|---|
-| B1 always answer, photo only | 100% | 0% | 0.640 | 0.281 | 8.1% | 51.4% | **0.821** |
-| B2 always take dermoscopy | 100% | 100% | 0.718 | 0.423 | 6.7% | 41.3% | 1.161 |
-| B3 confidence threshold, same coverage | 60.2% | 0% | 0.724 | 0.308 | 9.3% | 38.1% | 1.037 |
-| B3 + dermoscopy for everyone | 60.2% | 100% | **0.861** | **0.455** | 3.8% | 29.3% | 1.309 |
-| B5 dermoscopy for random patients | 100% | 27.3% | 0.656 | 0.312 | 7.8% | 51.0% | 0.926 |
-| B5 dermoscopy for most uncertain | 100% | 27.3% | 0.680 | 0.358 | 8.8% | 44.2% | 0.924 |
-| **D-GUARD (HIGH tier)** | **60.2%** | **27.3%** | 0.762 | 0.312 | **3.0%** | 53.1% | 1.013 |
+| B1 always answer, photo only | 100% | 0% | 0.661 | 0.314 | 6.1% | 51.4% | **0.719** |
+| B2 always take dermoscopy | 100% | 100% | 0.719 | 0.393 | 7.8% | 38.5% | 1.193 |
+| B3 confidence threshold, same coverage | 54.4% | 0% | 0.811 | 0.342 | 3.5% | 45.1% | 0.910 |
+| B3 + dermoscopy for everyone | 54.4% | 100% | **0.893** | **0.436** | **2.3%** | 33.8% | 1.321 |
+| B5 dermoscopy for random patients | 100% | 26.3% | 0.667 | 0.311 | 6.6% | 51.4% | 0.865 |
+| B5 dermoscopy for most uncertain | 100% | 26.3% | 0.704 | 0.360 | 6.0% | 45.7% | 0.787 |
+| **D-GUARD (HIGH tier)** | **54.4%** | **26.3%** | 0.769 | 0.284 | **3.5%** | 53.0% | 1.074 |
 
-- **3.1× fewer missed cancers** than a confidence threshold at the same coverage, at higher
-  accuracy and lower cost.
-- **Acquisition efficiency +0.33** (most-uncertain-first: −0.03).
-- **Learn-then-Test certified** at both stages (λ̂ = 0.193, 0.254).
-- **Ignorance now ranks errors better than softmax** (AUGRC 0.0874 vs 0.0918).
-- **Against us:** always answering is cheapest on mean cost; HIGH answers raise more false
-  alarms (53.1%) because the 5:2 cost matrix makes "possibly cancer" the safer statement.
+- **Learn-then-Test certified** at both stages (λ̂ = 0.212, 0.365; α = 5%, δ = 10%).
+- **Against us:** with these probabilities the confidence threshold is as safe and more
+  accurate; always answering is cheapest; HIGH answers raise more false alarms (53%).
 
-### Ablation — what the team adds
+### The key finding — abstention borrows its safety from the fusion
 
-| Policy driven by | HIGH share | HIGH accuracy | Missed (HIGH) | Baseline at same coverage |
-|---|---|---|---|---|
-| Dempster–Shafer of the 3 heads | 35.3% | 83.8% | 1.8% | 4.7% |
-| **Adaptive fusion of the 5 specialists** | **60.2%** | 76.2% | 3.0% | 9.3% |
+The same policy on the two best fusion back-ends (both cross-fitted):
 
-The team nearly **doubles** the share of confident answers while keeping missed cancers at
-a third of the matched baseline.
+| Back-end | HIGH | HIGH acc. | **D-GUARD missed** | **Threshold missed (same coverage)** | Acquisition efficiency (vs most-uncertain) | AUGRC 1−u / softmax |
+|---|---|---|---|---|---|---|
+| Iterative EM (v1) | 57.2% | 0.762 | **3.3%** | **9.3%** | **+0.30** (−0.04) | **0.0874** / 0.0918 |
+| Learned gate (v2) | 54.4% | 0.769 | **3.5%** | **3.5%** | +0.20 (+0.20) | 0.0852 / **0.0791** |
+
+D-GUARD's miss rate hardly moves. The threshold's swings from 9.3% to 3.5%: **a confidence
+threshold is exactly as safe as the ranking it is given.** The calibrated policy gives a
+stable, certified miss rate whatever it is given; when the fusion is good, the simple
+baseline catches up. The same holds for choosing whom to ask for dermoscopy. This is
+reported as the paper's central negative result.
+
+*(Earlier versions reported 3.0% vs 9.3% at 60.2% coverage. That used v1 fitted in-sample
+on the calibration lesions; cross-fitting lowered HIGH coverage to 57.2% — see
+[what_did_not_work.md](what_did_not_work.md) §34.)*
 
 ---
 
-## 6. Cost of a missed cancer
+## 6. Cost of a missed cancer (learned gate)
 
-| Miss cost | Answered | HIGH | HIGH accuracy | Missed (HIGH) | Baseline, same coverage |
+| Miss cost | Answered | HIGH | HIGH accuracy | Missed (HIGH) | Threshold, same coverage |
 |---|---|---|---|---|---|
-| 2 | 89.6% | 65.1% | 0.754 | 3.9% | 8.6% |
-| 3 | 89.7% | 63.8% | 0.753 | 4.0% | 8.8% |
-| **5** | **89.6%** | **60.2%** | **0.762** | **3.0%** | **9.3%** |
-| 10 | 90.1% | 55.0% | 0.774 | 2.3% | 9.5% |
+| 2 | 89.1% | 59.2% | 0.758 | 4.3% | 3.9% |
+| 3 | 89.1% | 57.1% | 0.768 | 4.0% | 3.8% |
+| **5** | **89.5%** | **54.4%** | **0.769** | **3.5%** | **3.5%** |
+| 10 | 89.5% | 50.2% | 0.787 | 2.3% | 3.3% |
 
 ---
 
-## 7. Robustness — DERMA-STRESS (300 test lesions, stage A, full system)
+## 7. Robustness — DERMA-STRESS (300 test lesions, stage A)
 
-| Condition | ignorance u | HIGH (no gate) | Missed (no gate) | HIGH (gate) | Missed (gate) | Dermoscopy asked | Quality-flagged |
+"Model" = without the pipeline's quality and missing-details gates; "Gated" = full system.
+
+| Condition | ignorance u | HIGH (model) | Missed (model) | HIGH (gated) | Missed (gated) | Dermoscopy asked | Photo flagged |
 |---|---|---|---|---|---|---|---|
-| clean | 0.679 | 49% | 4.1% | 46% | 4.3% | 28% | 6% |
-| **blur** | **0.605 ↓** | **53% ↑** | 1.9% | **0%** | — | 14% | **100%** |
-| **dark** | 0.723 | 29% | **13.8%** | **0%** | — | 28% | **100%** |
-| noise | **0.821 ↑** | 19% | 5.3% | 18% | 5.5% | **51%** | 2% |
-| JPEG | 0.741 ↑ | 29% | 4.6% | 25% | **1.4%** | 42% | 18% |
-| **occlusion** | 0.634 | 29% | 9.3% | 14% | **9.3%** | 9% | 51% |
-| no details | 0.754 ↑ | 49% | 6.1% | 47% | **6.4%** | 42% | 6% |
+| clean | 0.679 | 46% | 4.3% | 44% | 4.6% | 28% | 8% |
+| **blur** | **0.605 ↓** | **52% ↑** | 1.9% | **0%** | — | 15% | **100%** |
+| **dark** | 0.723 | 23% | **11.4%** | **0%** | — | 32% | **100%** |
+| **noise** | 0.824 ↑ | 17% | 6.0% | **0%** | — | 48% | **100%** (grainy) |
+| JPEG | 0.741 ↑ | 26% | 3.8% | 22% | **0.0%** | 31% | 24% |
+| **occlusion** | 0.634 | 23% | 8.8% | **0%** | — | 16% | **100%** (covered) |
+| **no details** | 0.754 ↑ | 45% | **17.6%** | **0%** — details requested | — | 32% | 8% |
 
 **Findings**
-1. **Blur fools the evidential model** — ignorance falls and confident answers rise. The
-   quality gate removes them all; same for dark photos (which missed 13.8% ungated).
-2. **Noise, JPEG and missing details raise ignorance** and the system asks for dermoscopy
-   far more (28% → 42–51%).
-3. **Remaining failures:** occluded lesions (9.3% missed in the remaining HIGH answers) and
-   missing details (6.4% vs 4.3%). Neither signal fully registers these — reported as open.
+1. **Ignorance alone catches none of the dangerous cases.** Blur even makes the model
+   *more* confident.
+2. **The pipeline's checks catch all of them:** blur, darkness, grain and a covered centre
+   are flagged on 100% of damaged photos; a photo without details triggers a request.
+   No damaged input gets a HIGH answer.
+3. **The learned gate is brittle without details** (17.6% missed): it relies on the
+   similar-case vote, whose embedding includes the details. Asking for them is necessary.
+4. **Cost:** 8% of clean photos are flagged (was 6% before the grain check).
 
 ---
 
@@ -176,50 +200,41 @@ Bootstrap, 2000 resamples of the 787 test lesions (`scripts/analyze_milk.py`):
 
 | Quantity | Value | 95% CI |
 |---|---|---|
-| Answered | 89.6% | 87.4–91.7% |
-| HIGH-confidence share | 60.2% | 56.7–63.7% |
-| HIGH accuracy | 76.2% | 71.9–80.0% |
-| Missed cancers, HIGH | **3.0%** | 1.5–4.6% |
-| Missed cancers, confidence threshold (same coverage) | 9.3% | 6.7–11.9% |
-| Team-fusion macro-F1 | 0.453 | 0.378–0.513 |
+| Answered | 89.5% | 87.3–91.6% |
+| HIGH-confidence share | 54.4% | 50.8–57.8% |
+| HIGH accuracy | 76.9% | 72.7–80.8% |
+| Missed cancers, HIGH | **3.5%** | 1.8–5.4% |
+| Missed cancers, threshold (same coverage) | 3.5% | 1.9–5.3% |
+| Missed cancers, learned rejector | 3.3% | 1.7–5.0% |
+| Learned-gate macro-F1 (stage B) | 0.418 | 0.343–0.475 |
 
 | Paired test | Difference | 95% CI | one-sided p |
 |---|---|---|---|
-| Missed cancers: confidence threshold − D-GUARD | +6.3 pts | +4.1 to +8.8 | **< 0.001** |
-| Macro-F1: team fusion − Dempster–Shafer | +0.078 | +0.018 to +0.129 | **0.002** |
-| Missed cancers: learned rejector − D-GUARD | +0.6 pts | −0.7 to +2.0 | 0.18 (n.s.) |
-
-### Against a stronger baseline — learned deferral
-
-A **learned rejector** (L2D-style: a gradient-boosted classifier trained on validation to
-predict the model's own errors, abstaining where it expects to be wrong) at the same 60.2%
-coverage: accuracy 75.9%, **missed cancers 3.6%** — statistically indistinguishable from
-D-GUARD's 3.0%. **On safety alone, a well-trained rejector matches our HIGH tier.** What the
-rejector does not have: a certified bound, dermoscopy acquisition, an answer for the other
-40% of patients, a reason for each decision, and the verified report.
+| Missed: threshold − D-GUARD | 0.0 pts | −1.4 to +1.4 | 0.53 (n.s.) |
+| Missed: learned rejector − D-GUARD | −0.2 pts | −1.7 to +1.2 | 0.63 (n.s.) |
+| Macro-F1: learned gate − DS (stage B) | +0.042 | −0.033 to +0.106 | 0.17 (n.s.) |
+| v2 − v1: missed | +0.2 pts | −0.4 to +0.8 | n.s. |
+| v2 − v1: HIGH share | −2.8 pts | −5.0 to −0.6 | significant |
 
 ### Fairness — by skin tone
 
 | Skin tone | n | HIGH share | HIGH accuracy | Missed (HIGH) |
 |---|---|---|---|---|
-| 1 | 14 | 21% | 33% | 33% — **too few to judge** |
-| 2 | 67 | 54% | 78% | **8.3%** |
-| 3 | 489 | 66% | 77% | 2.2% |
-| 4 | 167 | 54% | 74% | 3.3% |
-| 5 | 50 | 44% | 73% | 0.0% |
+| 1 | 14 | 14% | 50% | 0% — **too few to judge** |
+| 2 | 67 | 34% | 83% | **8.7%** |
+| 3 | 489 | 61% | 78% | 3.0% |
+| 4 | 167 | 51% | 73% | 4.7% |
+| 5 | 50 | 36% | 72% | 0.0% |
 
-Lighter tones (1–2) fare worse and are under-represented in MILK10k. Reported, not fixed.
+Lighter tones (1–2) fare worse and are under-represented. Reported, not fixed.
 
 ### Decision curve — net benefit of "refer as possibly malignant"
 
 | Threshold | Refer everyone | Refer if P(malignant) ≥ t | D-GUARD rule |
 |---|---|---|---|
-| 0.1 | 0.706 | 0.694 | 0.695 |
-| 0.3 | 0.622 | 0.628 | 0.629 |
-| 0.5 | 0.471 | **0.555** | 0.511 |
-
-D-GUARD's referral rule (refer unless a HIGH-confidence benign answer) is as good as a tuned
-probability threshold at low thresholds and more conservative at high ones.
+| 0.1 | 0.706 | 0.697 | 0.693 |
+| 0.3 | 0.622 | 0.626 | 0.625 |
+| 0.5 | 0.471 | **0.555** | 0.502 |
 
 ---
 
@@ -232,18 +247,24 @@ Model A is switched off — it was trained on these images. `scripts/run_shift_p
 | | MILK10k test | PAD-UFES-20 |
 |---|---|---|
 | Mean ignorance | 0.676 | **0.748** |
-| OOD-flagged / severe photo quality | 1% / 6% | **6% / 26%** |
-| HIGH-confidence answers | 60% | **16%** |
+| OOD-flagged / severe photo quality | 1% / 8% | **6% / 28%** |
+| HIGH-confidence answers | 54% | **14%** |
+| Dermoscopy requested (none exists) | 26% | 30% |
 | Deferred | 10% | **20%** |
-| Cancer-vs-benign AUROC | 0.799 | **0.802** |
-| Accuracy, all answers | 0.644 | 0.385 |
-| Accuracy, HIGH tier | 0.762 | 0.476 (confidence threshold: 0.557) |
-| Missed cancers, HIGH tier | 3.0% | **0.0%** |
+| Cancer-vs-benign AUROC | 0.799 | **0.807** |
+| Accuracy, all cases | 0.644 | 0.382 |
+| Accuracy, HIGH tier | 0.769 | 0.491 (confidence threshold: 0.657) |
+| Missed cancers, HIGH tier | 3.5% | **0.0%** |
 
-**Read:** the system *notices* the shift (every warning signal rises, confident answers drop
-from 60% to 16%) and the safety target holds — no cancer missed among confident answers.
-But the 11-class diagnosis does not transfer: confident answers are only 48% right, below a
-plain confidence threshold. Safe, not accurate, under shift.
+**Read:** the system *notices* the shift — every warning signal rises and confident answers
+drop from 54% to 14% — and no cancer is missed among them. But the 11-class diagnosis does
+not transfer: HIGH answers are 49% right, below a plain confidence threshold (66%). Safe,
+not accurate, under shift.
+
+
+## 7c. External test with dermoscopy — Derm7pt, no refitting
+
+<!-- DERM7PT -->
 
 ---
 
@@ -255,12 +276,21 @@ plain confidence threshold. Safe, not accurate, under shift.
 | ...and lowers ignorance | 0.676 → 0.439 |
 | Local model = Kaggle model | test macro-F1 0.376 vs 0.379 |
 | Heads-level H1 (all three inputs ≥ best pair) | **not supported**: 0.379 vs 0.403 |
-| Post-hoc logit adjustment | helped val (0.36→0.44), **hurt test** (0.376→0.359) — dropped |
+| Post-hoc logit adjustment | helped val, **hurt test** — dropped |
 | Rare classes (BEN_OTH, INF, MAL_OTH) | never predicted |
 
 ---
 
-## 9. Limits
+## 9. Seeds
+
+One training seed so far (42). Each Kaggle seed run also redraws the lesion split, so
+extra seeds measure training *and* split variation. When the runs are downloaded:
+`python scripts/run_seeds.py runs/<seed7> runs/<seed2026>` → `outputs/seeds/summary.json`
+(mean ± sd of every headline number).
+
+---
+
+## 10. Limits
 
 One training seed; ImageNet ResNet50; validation fits every fusion and decision
 parameter; a referral population (74% malignant); no centre column. See
@@ -268,16 +298,6 @@ parameter; a referral population (74% malignant); no centre column. See
 
 ---
 
-## 10. Reproduce
+## 11. Reproduce
 
-```bash
-python scripts/milk_native_infer.py          # evidential heads on val/test   (~2.5 min)
-python scripts/build_specialists.py          # all 5 specialists, embeddings  (~15 min)
-python scripts/run_team.py                   # Devil's Advocate + adaptive fusion (~1 min)
-for c in 2 3 5 10; do
-  python scripts/run_eade_milk.py --native outputs/milk_team --missed-cost $c \
-         --out outputs/eade_team/cost_$c
-done
-python scripts/build_milk_index.py           # similar-case index for the app (~3 min)
-python scripts/run_stress_milk.py --out outputs/stress_milk/report_team.json   # (~10 min)
-```
+See [12_how_it_was_built.md](12_how_it_was_built.md) Part 6 for the full command list.

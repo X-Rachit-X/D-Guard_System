@@ -62,3 +62,9 @@ data/care/
 
 # Trained run artifacts: keep metrics/predictions, never weights
 runs/**/checkpoints/
+
+# local GPU training environment
+.venv-gpu/
+
+# Derm7pt images - research use only, NOT redistributable
+dataset/

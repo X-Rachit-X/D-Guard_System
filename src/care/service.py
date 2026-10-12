@@ -61,6 +61,13 @@ ACQUIRE_HOWTO = (
     "Hold it flat against the spot and keep the whole spot in frame."
 )
 
+DETAILS_HOWTO = (
+    "Please add a few details about yourself and the spot: your age, sex and where "
+    "on the body it is. Every case the system was checked on had these details; "
+    "without them (and without a dermoscopy photo) its answers are less reliable. "
+    "It takes under a minute, and the spot will be assessed again straight away."
+)
+
 
 def _today() -> datetime:
     return datetime.now(timezone.utc)
@@ -154,6 +161,7 @@ class CareService:
         self.store.add_message(cid, "system", "result", result.patient_message)
         change = self._change_check(previous, d.p_malignant, tentative)
         tier = getattr(d, "tier", None)
+        self._last_acquire_target = getattr(d, "acquire_target", None)
         self._route(cid, result.action, d.urgency, change, tier)
         return {"assessment_id": aid, "action": result.action, "urgency": d.urgency,
                 "tier": tier, "tentative": tentative, "change": change, "result": result}
@@ -186,7 +194,9 @@ class CareService:
 
         if action == "ACQUIRE":
             s.set_status(cid, CaseStatus.AWAITING_PATIENT, urgency)
-            s.add_message(cid, "system", "instruction", ACQUIRE_HOWTO)
+            target = getattr(self, "_last_acquire_target", None)
+            s.add_message(cid, "system", "instruction",
+                          DETAILS_HOWTO if target == "metadata" else ACQUIRE_HOWTO)
             return
 
         if action == "DEFER":
@@ -290,6 +300,37 @@ class CareService:
         return rid
 
     # ============================================== patient conversation
+    # ======================================================= data control
+    def _remove_uploads(self, paths) -> int:
+        """Delete only files this platform saved (inside upload_dir) - never the
+        dataset images used by the demo."""
+        n = 0
+        root = Path(self.upload_dir).resolve()
+        for p in paths:
+            try:
+                fp = Path(p).resolve()
+                if root in fp.parents and fp.exists():
+                    fp.unlink()
+                    n += 1
+            except OSError:
+                pass
+        return n
+
+    def delete_case(self, cid: int, actor: str = "patient") -> int:
+        return self._remove_uploads(self.store.delete_case(cid, actor))
+
+    def delete_patient(self, pid: int, actor: str = "patient") -> int:
+        return self._remove_uploads(self.store.delete_patient(pid, actor))
+
+    def clear_messages(self, cid: int, actor: str = "patient") -> None:
+        self.store.clear_messages(cid, actor)
+
+    def reset_all(self) -> int:
+        paths = [e["path"] for c in self.store.cases() for e in self.store.evidence(c["id"])
+                 if e.get("path")]
+        self.store.reset_all()
+        return self._remove_uploads(paths)
+
     def ask(self, cid: int, question: str) -> int:
         mid = self.store.add_message(cid, "patient", "question", question)
         self.store.add_message(cid, "system", "info",

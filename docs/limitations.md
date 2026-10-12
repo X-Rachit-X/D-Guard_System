@@ -138,3 +138,17 @@ standard. About 6% of ordinary photos trip the severe level and lose their HIGH 
 - DermLIP_PanDerm is **CC-BY-NC-ND**; "ND" arguably forbids fine-tuning, so linear probing
   is the safer reading. Its pretraining corpus must be checked for overlap with our
   evaluation datasets before any clean-probe claim.
+
+## 5. Added after the v2 analysis
+
+- **The safety advantage over simple abstention is not robust.** With the learned-gate
+  fusion, a confidence threshold and a learned rejector are as safe as the HIGH tier
+  ([05_results.md](05_results.md) §5). What remains specific to D-GUARD: the certified
+  bound, stability across fusion back-ends, evidence acquisition, LOW-tier answers and
+  explanations.
+- **The learned gate depends on patient details** (17.6% missed without them, before the
+  request was added). Any deployment must keep the missing-details request.
+- **Image checks are heuristics** fitted on 300 training photos (1st/99th percentiles);
+  they flag 8% of clean photos and may miss damage types not in DERMA-STRESS.
+- **Seeds:** each seed redraws the split, so seed spread mixes training and split variance.
+- **Derm7pt** diagnoses map onto only 6 of the 11 MILK10k classes, and it has no age.

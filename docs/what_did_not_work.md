@@ -300,11 +300,14 @@ Averaging the five specialists gives macro-F1 0.317, below Dempster–Shafer of 
 heads (0.376). Only the evidence-aware adaptive fusion (0.453) beats it. More models do not
 help by themselves; weighting them by evidence does.
 
-## 28. Occlusion and missing details still cause confident errors
+## 28. Occlusion and missing details caused confident errors — now fixed
 
-With the team, occluded photos keep 14% HIGH answers that miss 9.3% of cancers, and with
-details withheld the HIGH miss rate rises from 4.3% to 6.4%. Neither the evidential
-signals nor the quality statistics fully register these. Open.
+With the v1 team, occluded photos kept 14% HIGH answers that missed 9.3% of cancers, and
+with details withheld the HIGH miss rate rose from 4.3% to 6.4%. **Fixed:** a
+*covered-centre* check (share of perfectly flat 8×8 blocks in the middle 60% of the photo;
+clean photos ≤ 0.27 at the 99th percentile, occluded ≥ 0.92) and a *missing-details*
+request. In DERMA-STRESS both now give 0 HIGH answers. (Measuring the whole photo instead
+of its centre did not work: dermoscopy vignettes and dark backgrounds are flat too.)
 
 ## 29. More confident answers means more false alarms
 
@@ -313,7 +316,7 @@ the benign lesions they answer malignant (35% before). With a 5:2 cost ratio, "p
 cancer, see a dermatologist" is the cheaper statement under doubt. Safe, but it costs
 specificity.
 
-## 30. A learned rejector is as safe as our HIGH tier
+## 30. A learned rejector is as safe as our HIGH tier (still true with v2: 3.3% vs 3.5%, p = 0.63)
 
 A gradient-boosted error predictor trained on validation (L2D-style), abstaining at the same
 60.2% coverage, misses 3.6% of cancers against D-GUARD's 3.0% — difference 0.6 points,
@@ -338,7 +341,7 @@ diagnosis does not.
 
 Not yet answerable, and marked as such rather than guessed:
 
-- whether the results hold across seeds 7 and 2026
+- whether the results hold across seeds 7 and 2026 (pipeline ready: `scripts/run_seeds.py`)
 - whether a dermatology encoder (DermLIP) changes H1
 - whether per-modality `u_m` genuinely predicts per-modality error (**H4**)
 - whether DS conflict fires on real contradictions rather than merely hard cases (**H5**) —
@@ -349,3 +352,54 @@ Not yet answerable, and marked as such rather than guessed:
 
 **Answered since the last version:** the acquisition policy **does** beat random and
 entropy-based acquisition (AE +0.27 vs +0.01 at cost 5, +0.40 vs −0.06 at cost 10).
+
+## 34. Fitting the fusion in-sample made the safety numbers look better
+
+The v1 fusion's parameters were chosen on the same 786 validation lesions that then
+calibrated the conformal sets and the Learn-then-Test threshold. With **cross-fitting**
+(fit on 4/5 of validation, produce probabilities for the other 1/5) the HIGH share fell
+from 60.2% to 57.2% and missed cancers rose from 3.0% to 3.3%. All reported numbers are
+now cross-fitted.
+
+## 35. A better fusion made the simple baseline as safe as D-GUARD
+
+The old headline — 3.0% vs 9.3% missed against a confidence threshold — depended on the
+fusion under the threshold. With the v2 learned gate the threshold misses 3.5%, the same
+as D-GUARD, and is more accurate (81.1% vs 76.9%). D-GUARD's own miss rate stayed at
+3.3–3.5% on both back-ends. **A threshold is only as safe as the ranking it is given.**
+This is now the central negative result of the paper.
+
+## 36. The validation winner lost on test with dermoscopy
+
+The learned gate had the best out-of-fold validation macro-F1 in both stages (0.471 vs
+0.397 for v1 in stage B) and was picked, as declared. On test, v1 scored higher in stage B
+(0.453 vs 0.418). Macro-F1 over 11 classes, several with 5–7 test lesions, is noisy; the
+choice was not changed after seeing test.
+
+## 37. Choosing whom to ask for dermoscopy stopped beating "ask the most uncertain"
+
+With v1, acquisition efficiency was +0.30 against −0.04 for entropy-based selection. With
+v2 both are +0.20. Same lesson as §35: once the probabilities are better, simple
+uncertainty is a good enough guide.
+
+## 38. The learned gate fails badly without patient details
+
+Without details, v2's HIGH answers missed **17.6%** of cancers (v1: 6.4%). The gate leans on
+the similar-case vote (weight ~0.7–0.8), and that vote's embedding includes the details; a
+missing-details input puts the case among the wrong neighbours. The fix is not a better
+model but **asking for the details** before answering.
+
+## 39. Two new image checks cost some clean photos
+
+The grain check (sharpness above the 99th percentile of training photos) and the
+covered-centre check raised the share of clean photos flagged from 6% to 8%. Those
+patients get a LOW answer and a retake prompt instead of a HIGH answer.
+
+## 40. The old system's numbers cannot be compared with ours
+
+The old Models A–G reported 85–90% accuracy on PAD-UFES-20. Their split was by **photo**:
+re-running it shows 43% of test photos come from a lesion that was also in training and 62%
+from a patient who was. The old live "vision panel" also replaced Model A's output with
+0.925 on the true class when the file was a PAD-UFES image, and its DermLIP / PanDerm / Swin
+members were arithmetic variations of Model A. Our lesion-level MILK10k numbers are lower
+and honest; the two are not comparable.

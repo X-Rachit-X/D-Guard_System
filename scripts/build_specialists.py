@@ -74,7 +74,14 @@ def run_split(eng, pad, df, name, batch=24, with_pad=True):
 
 
 def main() -> int:
-    eng = NativeEngine()
+    import argparse
+    global OUT
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--run", default=None, help="trained run dir (default: seed 42)")
+    ap.add_argument("--out", default=str(OUT))
+    args = ap.parse_args()
+    OUT = Path(args.out)
+    eng = NativeEngine(run_dir=args.run) if args.run else NativeEngine()
     pad = PadLegacySpecialist(eng.classes)
     print(f"PAD-UFES Model A available: {pad.available}")
     OUT.mkdir(parents=True, exist_ok=True)

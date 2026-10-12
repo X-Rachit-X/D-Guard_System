@@ -10,12 +10,13 @@ details) of the same held-out test lesions; nothing is retrained.
     dark         brightness x0.35
     noise        Gaussian noise, sigma 0.12
     jpeg         JPEG quality 8
-    occlusion    centre 35% of the photo blacked out
+    occlusion    centre 35% of the photo blacked out (caught by the `covered` check)
     no_details   metadata withheld (vacuous opinion)
 
 Per condition: mean ignorance u, HIGH-tier rate, answered rate, deferral rate,
 accuracy and missed-cancer rate of HIGH-tier answers, and how often the
-image-quality agent flagged the photo.
+image-quality agent flagged the photo. "model only" columns are without the
+pipeline's quality and missing-details gates.
 
     python scripts/run_stress_milk.py              # 300 lesions, ~3 min CPU
     python scripts/run_stress_milk.py --n 787       # whole test split
@@ -88,8 +89,10 @@ def main() -> int:
             missed.append(is_mal and pred is not None and pred not in mal)
         act, tier = np.array(act), np.array(tier)
         high_model = (act == "PROCEED") & (tier != "LOW")
-        # With the pipeline's quality gate: a flagged photo cannot be HIGH.
-        high = high_model & ~np.array(flagged)
+        # With the pipeline's gates: a flagged photo (blur, dark, covered, ...) or a
+        # photo with no details and no dermoscopy cannot be HIGH.
+        gated = np.array(flagged) | (np.array([fn == "no_meta"] * len(flagged)))
+        high = high_model & ~gated
         answered = act == "PROCEED"
         corr = np.array([c if c is not None else False for c in correct])
         miss = np.array(missed)

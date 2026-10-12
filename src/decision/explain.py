@@ -32,6 +32,9 @@ REASON_TEXT = {
                           "checked on"),
     DeferReason.OUT_OF_DISTRIBUTION: ("this spot looks unlike the cases the system "
                                       "learned from"),
+    DeferReason.MISSING_DETAILS: ("only a photo was given - without your age, where the "
+                                  "spot is, or a dermoscopy image, the system is less "
+                                  "reliable"),
 }
 
 ACQUIRE_TEXT = {

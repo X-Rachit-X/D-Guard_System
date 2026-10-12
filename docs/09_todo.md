@@ -23,7 +23,12 @@ Everything below is **optional** and only makes the paper's numbers final or str
 | Quality thresholds (fitted on MILK10k photos and dermoscopy) | ✅ |
 | Agents: quality, librarian, report + verifier | ✅ |
 | Specialist team (incl. original PAD-UFES Model A), Devil's Advocate, iterative adaptive fusion | ✅ `scripts/run_team.py` |
-| Confidence tiers (answers 90% of patients; 60% confidently) | ✅ |
+| Confidence tiers (answers 90% of patients; 54% confidently) | ✅ |
+| Devil's Advocate v2 + 7-rule fusion comparison, cross-fitted | ✅ |
+| Occlusion, grain and missing-details checks; details request | ✅ |
+| Derm7pt external test (with dermoscopy) | ✅ |
+| Explanation panel, Compare-systems view, data deletion | ✅ |
+| Seeds 7 / 2026 | ⏳ run on Kaggle, then `scripts/run_seeds.py` |
 | Care platform, web app, REST API, terminal demo | ✅ |
 | Experiments: decision engine, baselines, cost sweep, stress test | ✅ |
 | Docs, panel guide, study plan, paper | ✅ |

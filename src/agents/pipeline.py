@@ -31,6 +31,7 @@ from typing import Dict, Optional
 
 from PIL import Image
 
+from src.agents.explainer import EvidenceExplainer
 from src.agents.librarian import MilkLibrarian
 from src.agents.quality import ImageQualityAgent
 from src.agents.report import ReportAgent
@@ -39,6 +40,16 @@ from src.constants import MILK_CLASS_FULL_NAMES
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INDEX = ROOT / "outputs" / "milk_rag" / "index_train"
+DETAIL_KEYS = ("age", "sex", "anatom_site_general", "site")
+
+
+def has_details(metadata: Optional[Dict]) -> bool:
+    """True if at least one of age / sex / body site was given."""
+    m = metadata or {}
+    return any(m.get(k) not in (None, "", "unknown") and m.get(k) == m.get(k)  # NaN check
+               for k in DETAIL_KEYS)
+
+
 QUALITY_CACHE = ROOT / "outputs" / "milk_rag" / "quality_thresholds.json"
 DERMO_QUALITY_CACHE = ROOT / "outputs" / "milk_rag" / "quality_thresholds_dermoscopy.json"
 
@@ -47,7 +58,8 @@ class DGuardPipeline:
     def __init__(self, engine, librarian: Optional[MilkLibrarian] = None,
                  quality: Optional[ImageQualityAgent] = None,
                  reporter: Optional[ReportAgent] = None,
-                 dermo_quality: Optional[ImageQualityAgent] = None):
+                 dermo_quality: Optional[ImageQualityAgent] = None,
+                 explainer: Optional[EvidenceExplainer] = None):
         self.engine = engine
         self.librarian = librarian
         self.quality = quality or ImageQualityAgent()
@@ -56,6 +68,7 @@ class DGuardPipeline:
         self.dermo_quality = dermo_quality or self.quality
         self.scribe = ScribeAgent()
         self.reporter = reporter or ReportAgent(engine.classes, MILK_CLASS_FULL_NAMES)
+        self.explainer = explainer or EvidenceExplainer(engine.classes, MILK_CLASS_FULL_NAMES)
 
     @classmethod
     def build(cls, engine=None, use_llm: bool = True, index_path: Path = DEFAULT_INDEX):
@@ -81,7 +94,8 @@ class DGuardPipeline:
                 llm = None
         return cls(engine, librarian, quality,
                    ReportAgent(engine.classes, MILK_CLASS_FULL_NAMES, llm=llm),
-                   dermo_quality=dermo_quality)
+                   dermo_quality=dermo_quality,
+                   explainer=EvidenceExplainer(engine.classes, MILK_CLASS_FULL_NAMES, llm=llm))
 
     # The platform and the app read these straight from the engine.
     def __getattr__(self, name):
@@ -103,14 +117,35 @@ class DGuardPipeline:
         # photos the model's ignorance FALLS and its HIGH-tier rate RISES, and on
         # dark photos HIGH answers missed 12.5% of cancers - while the quality agent
         # flagged 100% of both. The gate only ever adds caution.
+        #
+        # MISSING-DETAILS GATE. Every calibration case had age, sex and site. With
+        # none of them and no dermoscopy, DERMA-STRESS measured more missed cancers
+        # among HIGH answers (6.4% vs 4.3% clean), so such an answer stays LOW.
+        from src.decision.policy import DeferReason
         d = result.decision
         flagged = [k for k, v in q.items() if v is not None and v.severe]
-        if flagged and d.action.value == "PROCEED" and d.tier != "LOW":
+        reason = None
+        if flagged:
+            reason, gate = DeferReason.QUALITY, "photo_quality"
+        if dermoscopy is None and not has_details(metadata):
+            # Details are the cheapest evidence there is: ASK for them (acquisition)
+            # instead of answering without them. The tentative answer is kept.
+            if d.action.value != "DEFER":
+                from src.decision.explain import explain_doctor, explain_patient
+                from src.decision.policy import Action
+                d.action = Action.ACQUIRE
+                d.acquire_target = "metadata"
+                d.tier = None
+                d.gates = {**(d.gates or {}), "missing_details": True}
+                result.patient_message = explain_patient(d, self.engine.classes,
+                                                         MILK_CLASS_FULL_NAMES)
+                result.doctor_message = explain_doctor(d, self.engine.classes,
+                                                       MILK_CLASS_FULL_NAMES)
+        if reason is not None and d.action.value == "PROCEED" and d.tier != "LOW":
             from src.decision.explain import explain_doctor, explain_patient
-            from src.decision.policy import DeferReason
             d.tier = "LOW"
-            d.low_reason = DeferReason.QUALITY
-            d.gates = {**(d.gates or {}), "photo_quality": True}
+            d.low_reason = reason
+            d.gates = {**(d.gates or {}), gate: True}
             result.patient_message = explain_patient(d, self.engine.classes,
                                                      MILK_CLASS_FULL_NAMES)
             result.doctor_message = explain_doctor(d, self.engine.classes,
@@ -138,6 +173,8 @@ class DGuardPipeline:
             result.similar = self.librarian.similar(result.embeddings.get("clinical"),
                                                     result.embeddings.get("meta"), tent_name)
         result.report = self.reporter.write(result, result.quality, result.similar)
+        if self.explainer is not None and result.team:
+            result.explanation = self.explainer.explain(result.team, result.decision)
 
         advice = [a for v in q.values() if v for a in v.advice]
         if advice:

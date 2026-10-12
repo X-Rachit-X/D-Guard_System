@@ -6,46 +6,47 @@ Deferral for Multimodal Dermatology**
 > ⚠️ Research prototype. Not clinically validated. Not for medical diagnosis.
 
 A team of AI specialists looks at a skin lesion — the clinical photo, a dermoscopy image
-and the patient's details. A **Devil's Advocate** checks how good and how reliable each
-specialist's evidence is; an **iterative diagnosis-adaptive fusion** decides, per patient,
-whom to trust; and a calibrated policy gives one of four outcomes. A care platform connects
-patients, doctors and follow-ups around it.
+and the patient's details. A **Devil's Advocate** profiles how good and how reliable each
+specialist's evidence is and **learns, per patient, whom to trust**; a calibrated policy
+then answers, **asks for more evidence** (dermoscopy, missing details, a better photo), or
+hands the case to a doctor. A care platform connects patients, doctors and follow-ups
+around it, and every answer comes with an explanation of who said what and why.
 
 | | Outcome | Share of test patients |
 |---|---|---|
-| ✅ | **Answer — HIGH confidence** · every safety check passed | **60%** |
-| 📷 | **Ask for dermoscopy** · then decide again | 27% |
-| ⚠️ | **Answer — LOW confidence** · best diagnosis, clearly marked, a doctor confirms | 29% |
+| ✅ | **Answer — HIGH confidence** · every safety check passed | **54%** |
+| ⚠️ | **Answer — LOW confidence** · best diagnosis, clearly marked, a doctor confirms | 35% |
+| 📷 | **Ask for dermoscopy first** · then decide again | 26% |
 | 🧑‍⚕️ | **Defer** · the evidence contradicts itself | 10% |
 
-**9 in 10 patients get an answer; 6 in 10 get a confident one.** Dataset: **MILK10k**
-(11 diagnoses, every lesion with a clinical photo **and** a dermoscopy image).
+**9 in 10 patients get an answer; more than half get a confident one.** Dataset:
+**MILK10k** (11 diagnoses, every lesion with a clinical photo **and** a dermoscopy image).
+External tests: **PAD-UFES-20** (phone photos) and **Derm7pt** (photo + dermoscopy).
 
 ---
 
-## Results (787 held-out lesions)
+## Results (787 held-out lesions, everything fitted on 786 validation lesions)
 
-| | D-GUARD (HIGH answers) | Confidence threshold, same coverage |
-|---|---|---|
-| Patients answered confidently | **60.2%** | 60.2% |
-| Accuracy (11 classes) | **76.2%** | 72.4% |
-| **Missed cancers** | **3.0%** | 9.3% |
-| Mean cost per case | **1.013** | 1.037 |
+| | D-GUARD HIGH tier | Confidence threshold, same coverage | Learned rejector, same coverage |
+|---|---|---|---|
+| Patients answered confidently | 54.4% | 54.4% | 54.4% |
+| Accuracy (11 classes) | 76.9% | 81.1% | 77.8% |
+| **Missed cancers** | **3.5%** | 3.5% | 3.3% |
 
-- **Adaptive specialist fusion: macro-F1 0.376 → 0.453** (+20%) over evidential fusion alone.
-- A simple average of the same specialists is *worse* — the gain is the evidence-aware weighting.
-- The original project's **PAD-UFES Model A** is in the team; the Devil's Advocate learns it
-  transfers poorly to MILK10k and gives it ~2% weight.
-- Dermoscopy is requested selectively (acquisition efficiency **+0.33** vs −0.03 for
-  "ask the most uncertain").
-- Missed-cancer bound **certified** by Learn-then-Test; confidences shown are **calibrated**.
-- **Significant** vs a confidence threshold (p < 0.001); a learned rejector is as safe (p = 0.18).
-- **Shift test** on PAD-UFES-20, unchanged: confident answers drop 60% → 16%, 0 cancers missed
-  among them — but 11-class accuracy degrades to 48%.
+- **Seven fusion rules compared** (cross-fitted); the learned Devil's Advocate (v2) wins on
+  validation and lifts photo-only macro-F1 from 0.286 (evidential fusion) to **0.332**.
+- **The safety policy is robust to the fusion under it:** missed cancers 3.3% (v1) / 3.5%
+  (v2). A plain confidence threshold swings from **9.3%** (v1) to 3.5% (v2) — it is only as
+  safe as the probabilities it is given.
+- Missed-cancer bound **certified** by Learn-then-Test; shown confidences are **calibrated**.
+- **DERMA-STRESS:** blur, darkness, noise and occlusion are all caught by the quality agent
+  (0 confident answers on damaged photos); a photo without details triggers a request.
+- Reported against us: with the v2 fusion, a threshold is as safe and more accurate; always
+  answering is cheaper on mean cost; one training seed (more on the way).
 
-Reported against us: always answering is cheaper on mean cost; occluded photos and missing
-details still cause confident errors; one training seed. Full results:
-**[docs/05_results.md](docs/05_results.md)** · paper: **[paper/main.tex](paper/main.tex)**.
+Full results: **[docs/05_results.md](docs/05_results.md)** · how it was built and checked:
+**[docs/12_how_it_was_built.md](docs/12_how_it_was_built.md)** · paper:
+**[paper/main.tex](paper/main.tex)**.
 
 ---
 
@@ -53,24 +54,23 @@ details still cause confident errors; one training seed. Full results:
 
 ```
   clinical photo ──► S1 evidential head ─┐
-  dermoscopy ──────► S2 evidential head ─┤      ┌───────────────────┐    ┌──────────────────┐
-  patient details ─► S3 evidential head ─┼────► │ DEVIL'S ADVOCATE  │──► │ ITERATIVE        │
-  clinical photo ──► S4 PAD-UFES Model A ┤      │ quality Q         │    │ DIAGNOSIS-       │
-  embeddings ──────► S5 similar-case vote┘      │ learned reliab. R │    │ ADAPTIVE FUSION  │
-                                                │ uncertainty U     │    │ (EM, measured    │
-                                                │ consistency C     │    │  priors, ≤3 its) │
-                                                │ missingness M     │    └────────┬─────────┘
-                                                │ OOD (Mahalanobis) │             │
-                                                └───────────────────┘             ▼
-   Dempster–Shafer ignorance + conflict ──────────────────────────────► SAFETY + COST POLICY
-   conformal (benign/malignant) · Learn-then-Test · quality & OOD gates · cost matrix
-                                                                                  │
-                         HIGH answer · ACQUIRE dermoscopy · LOW answer · DEFER ◄──┘
-   agents: quality check · librarian (similar confirmed cases) · report + claim verifier
-   platform: patient app · doctor queue · questions · follow-ups + change check · audit · API
+  dermoscopy ──────► S2 evidential head ─┤      ┌─────────────────────┐   ┌──────────────────────┐
+  patient details ─► S3 evidential head ─┼────► │ DEVIL'S ADVOCATE    │──►│ FUSION RULE picked   │
+  clinical photo ──► S4 PAD-UFES Model A ┤      │ quality · learned   │   │ on validation:       │
+  embeddings ──────► S5 similar-case vote┘      │ reliability · uncer-│   │ v2 learned gate /    │
+                                                │ tainty · track rec. │   │ v1 iterative EM / …  │
+                                                │ consistency · OOD   │   └──────────┬───────────┘
+                                                └─────────────────────┘              ▼
+   Dempster–Shafer ignorance + conflict ─────────────────────────────────► SAFETY + COST POLICY
+   conformal (benign/malignant) · Learn-then-Test · quality, OOD, missing-details gates
+                                                                                     │
+          HIGH answer · LOW answer · ACQUIRE (dermoscopy / details / retake) · DEFER ◄┘
+   agents: quality · scribe · librarian · explainer · report + claim verifier
+   platform: patient app · doctor queue · messages · follow-ups · data deletion · audit · API
 ```
 
-From zero, in plain English: **[docs/02_learning_path.md](docs/02_learning_path.md)**.
+From zero, in plain English: **[docs/02_learning_path.md](docs/02_learning_path.md)** ·
+the app, view by view: **[docs/11_ui_guide.md](docs/11_ui_guide.md)**.
 
 ---
 
@@ -80,13 +80,13 @@ From zero, in plain English: **[docs/02_learning_path.md](docs/02_learning_path.
 pip install -r requirements.txt          # Windows/Anaconda: set KMP_DUPLICATE_LIB_OK=TRUE
 
 python scripts/demo_care.py              # four patients end to end (terminal)
-streamlit run app/dguard_app.py          # web app: patient / doctor / system
+streamlit run app/dguard_app.py          # web app: patient / doctor / compare / stress / research
 uvicorn src.api:app --port 8000          # REST API, docs at /docs
-pytest tests -q                          # 217 tests, ~6 s
+pytest tests -q                          # 229 tests, ~12 s
 ```
 
 Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted artifacts in
-`outputs/`. Regenerate everything: [docs/05_results.md](docs/05_results.md) §10.
+`outputs/`. Regenerate everything: [docs/12_how_it_was_built.md](docs/12_how_it_was_built.md) Part 6.
 
 ---
 
@@ -95,8 +95,8 @@ Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted a
 | | |
 |---|---|
 | Start | [docs/00_index.md](docs/00_index.md) · [01_overview.md](docs/01_overview.md) |
-| Learn | [02_learning_path.md](docs/02_learning_path.md) · [08_study_plan.md](docs/08_study_plan.md) |
-| System | [03_system.md](docs/03_system.md) · [04_methods.md](docs/04_methods.md) · [10_project_structure.md](docs/10_project_structure.md) |
+| Learn | [02_learning_path.md](docs/02_learning_path.md) · [08_study_plan.md](docs/08_study_plan.md) · [12_how_it_was_built.md](docs/12_how_it_was_built.md) |
+| System | [03_system.md](docs/03_system.md) · [04_methods.md](docs/04_methods.md) · [10_project_structure.md](docs/10_project_structure.md) · [11_ui_guide.md](docs/11_ui_guide.md) |
 | Results | [05_results.md](docs/05_results.md) · [what_did_not_work.md](docs/what_did_not_work.md) · [limitations.md](docs/limitations.md) |
 | Present | [07_panel_guide.md](docs/07_panel_guide.md) · [paper/main.tex](paper/main.tex) |
 

@@ -264,6 +264,26 @@ without notes.
 
 ---
 
+## Day 11 — v2: learned trust, fair comparison, and what it taught us
+
+**Read:** [12_how_it_was_built.md](12_how_it_was_built.md), [05_results.md](05_results.md)
+§3 and §5, `src/fusion/gating.py`, `src/fusion/methods.py`.
+
+**Learn:**
+- *Cross-fitting*: fit on 4/5, predict the other 1/5, so the same lesions can choose a
+  model and calibrate a guarantee without cheating.
+- *A learned gate*: weights = softmax of a learned score over every evidence signal.
+- *Selection on validation*: decide the rule before looking at test, and keep it.
+- *The key finding*: a confidence threshold is only as safe as the probabilities under it;
+  the calibrated policy stays at ~3.4% missed cancers on both fusions.
+
+**Do:** open the app → *Compare systems* → run one lesion; find a case where the
+specialists disagree and read *Why this result*. Then *Stress Lab* → *remove patient
+details* and watch the system ask for them.
+
+**Check yourself:** Why do C and S cancel in E = Q·R·U·C·S·M? Why did the threshold
+baseline become as safe with v2? What does the oracle row tell you?
+
 ## Glossary
 
 | Term | Meaning |

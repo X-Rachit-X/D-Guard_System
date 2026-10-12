@@ -9,6 +9,9 @@ scripts/analyze_milk.py - Statistics the paper needs, from saved per-case result
        validation to predict the model's own errors; abstains on the cases it
        expects to get wrong, at the same coverage as D-GUARD
     4  decision-curve net benefit for "refer as possibly malignant"
+    5  every system side by side (always-answer, B3, B4, D-GUARD v1 / v2) and a
+       paired v2-vs-v1 test; saves the B3 threshold and the rejector to
+       outputs/analysis/baselines.joblib for the app's Comparative-study view
 
     python scripts/analyze_milk.py
 Prerequisites: run_team.py and run_eade_milk.py --native outputs/milk_team.
@@ -50,9 +53,17 @@ def ci(vals):
 
 
 def main() -> int:
-    cases = load(ROOT / "outputs/eade_team/cost_5/cases.npz")
-    team = {s: load(ROOT / f"outputs/milk_team/{s}.npz") for s in ("val", "test")}
-    nat_t = load(ROOT / "outputs/milk_native/test.npz")
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--eade", default="outputs/eade_team/cost_5")
+    ap.add_argument("--team", default="outputs/milk_team")
+    ap.add_argument("--native", default="outputs/milk_native")
+    ap.add_argument("--eade-em", default="outputs/eade_team_em/cost_5")
+    ap.add_argument("--out", default="outputs/analysis")
+    args = ap.parse_args()
+    cases = load(ROOT / args.eade / "cases.npz")
+    team = {s: load(ROOT / args.team / f"{s}.npz") for s in ("val", "test")}
+    nat_t = load(ROOT / args.native / "test.npz")
     y = cases["y"]
     n = len(y)
     act, tier, pred = cases["action"], cases["tier"], cases["pred"]
@@ -185,8 +196,66 @@ def main() -> int:
         out["net_benefit"][str(t)] = {k: float(v) for k, v in row.items()}
         print(f"  {t:9.1f} {row['refer_all']:10.3f} {row['model']:10.3f} {row['dguard']:10.3f}")
 
-    dest = ROOT / "outputs" / "analysis"
+    # ---- 5. every system side by side (for the paper table and the app) -------
+    print()
+    print("=" * 76)
+    print("5. ALL SYSTEMS ON THE SAME TEST LESIONS")
+    print("=" * 76)
+    systems = {}
+
+    def row(name, answered_mask, pr, note=""):
+        m = answered_mask
+        systems[name] = {
+            "coverage": float(m.mean()),
+            "accuracy": float((pr[m] == y[m]).mean()) if m.any() else None,
+            "missed_cancer_rate": float(missed(y[m], pr[m]).mean()) if m.any() else None,
+            "macro_f1_all": float(f1_score(y, pr, labels=list(range(K)), average="macro",
+                                           zero_division=0)),
+            "note": note}
+
+    pB_ds = nat_t["full_prob"].argmax(1)
+    row("Always answer - DS heads, photo+details", np.ones(n, bool), nat_t["no_dermo_prob"].argmax(1),
+        "no abstention")
+    row("Always answer - DS heads, + dermoscopy", np.ones(n, bool), pB_ds, "no abstention")
+    row("Always answer - team, + dermoscopy", np.ones(n, bool),
+        team["test"]["full_prob"].argmax(1), "no abstention")
+    row("B3 max-softmax threshold", b3, predA, "matched coverage")
+    row("B4 learned rejector (L2D)", b4, predA, "matched coverage")
+    em_path = ROOT / args.eade_em / "cases.npz"
+    if em_path.exists():
+        em = load(em_path)
+        em_high = (em["action"] == "PROCEED") & (em["tier"] != "LOW")
+        row("D-GUARD, fusion v1 (EM) - HIGH tier", em_high, em["pred"], "cross-fitted")
+    row("D-GUARD, fusion v2 (learned gate) - HIGH tier", high, pred, "selected on val")
+    row("D-GUARD - all answers (HIGH + LOW)", answered, pred, "LOW is flagged")
+    for k, r in systems.items():
+        fmt = lambda v: "  n/a" if v is None else f"{v:.3f}"  # noqa: E731
+        print(f"  {k:46} cov {r['coverage']:.3f}  acc {fmt(r['accuracy'])}  "
+              f"miss {fmt(r['missed_cancer_rate'])}")
+    out["systems"] = systems
+
+    if em_path.exists():
+        em_pred = em["pred"]
+
+        def d_stats(idx):
+            hh, ee = high[idx], em_high[idx]
+            a = missed(y[idx][hh], pred[idx][hh]).mean() if hh.any() else np.nan
+            b = missed(y[idx][ee], em_pred[idx][ee]).mean() if ee.any() else np.nan
+            return a - b, hh.mean() - ee.mean()
+        pt = d_stats(np.arange(n))
+        bs = np.array([d_stats(rng.integers(0, n, n)) for _ in range(B)])
+        out["v2_vs_v1"] = {"miss_diff": float(pt[0]), "miss_ci95": ci(bs[:, 0][~np.isnan(bs[:, 0])]),
+                           "high_cov_diff": float(pt[1]), "high_cov_ci95": ci(bs[:, 1])}
+        print(f"\n  v2 - v1: missed {pt[0]:+.3f} CI {out['v2_vs_v1']['miss_ci95']}, "
+              f"HIGH coverage {pt[1]:+.3f} CI {out['v2_vs_v1']['high_cov_ci95']}")
+
+    dest = ROOT / args.out
     dest.mkdir(parents=True, exist_ok=True)
+    import joblib
+    joblib.dump({"b3_threshold": float(thr), "rejector": rej,
+                 "rejector_threshold": float(np.quantile(risk, cov)), "coverage": float(cov),
+                 "features": "max p, margin, entropy, P(mal), u, conflict (stage A)"},
+                dest / "baselines.joblib")
     (dest / "analysis.json").write_text(json.dumps(out, indent=2))
     print(f"\nsaved -> {dest / 'analysis.json'}")
     return 0

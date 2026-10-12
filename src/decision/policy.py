@@ -51,6 +51,7 @@ class DeferReason(str, Enum):
     ACQUISITION_EXHAUSTED = "ACQUISITION_EXHAUSTED"
     QUALITY = "QUALITY"          # photo outside the calibrated quality range
     OUT_OF_DISTRIBUTION = "OUT_OF_DISTRIBUTION"   # unlike any training lesion (Mahalanobis)
+    MISSING_DETAILS = "MISSING_DETAILS"  # photo only: no age / site / sex, no dermoscopy
 
 
 # ---------------------------------------------------------------------------
