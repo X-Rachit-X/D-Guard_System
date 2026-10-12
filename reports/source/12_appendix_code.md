@@ -5,34 +5,6 @@ This appendix reproduces the most important functions of the system exactly as t
 **A.1  The learned evidence gate (Devil's Advocate v2): features and fitting** (file: `src/fusion/gating.py`)
 
 ```
-def evidence_features(P, Q, R, present, W_prior, ood) -> np.ndarray:
-    """(N, M, K) specialist distributions -> (N, M, F) evidence features."""
-    N, M, K = P.shape
-    srt = np.sort(P, axis=2)
-    conf, margin = srt[:, :, -1], srt[:, :, -1] - srt[:, :, -2]
-    top = P.argmax(2)
-    agree = np.zeros((N, M))
-    for m in range(M):
-        others = present.copy()
-        others[:, m] = False
-        same = (top == top[:, [m]]) & others
-        agree[:, m] = np.where(others.sum(1) > 0, same.sum(1) / np.maximum(others.sum(1), 1), 0.5)
-    # provisional diagnosis = reliability-weighted average, for the utility look-up
-    w0 = np.where(present, R + EPS, 0.0)
-    y0 = ((w0 / w0.sum(1, keepdims=True))[:, :, None] * P).sum(1).argmax(1)
-    util = W_prior[y0] if W_prior is not None else np.full((N, M), 0.5)
-    C = js_consistency(P, present)
-    Mmiss = 1.0 - present.mean(1)
-    ood = np.zeros(N) if ood is None else np.clip(ood, 0, 5)
-    case = np.stack([C, Mmiss, ood], 1)[:, None, :].repeat(M, 1)
-    F = np.concatenate([
-        np.stack([np.log(np.clip(Q, 1e-3, 1)), np.log(np.clip(R, 1e-3, 1)),
-                  norm_entropy(P), conf, margin, agree, np.log(np.clip(util, 1e-3, 1))], 2),
-        case], 2)
-    return F.astype(np.float32)
-```
-
-```
     def fit(self, P, F, present, y):
         import torch
         N, M, Fd = F.shape
@@ -139,36 +111,7 @@ def run_methods(names, Pv, Qv, Mv, yv, Ov, Pt, Qt, Mt, Ot, methods, folds):
     return oof, test, wts, ctx
 ```
 
-**A.4  Iterative diagnosis-adaptive fusion (v1)** (file: `src/fusion/adaptive.py`)
-
-```
-    def fuse(self, P, QR, present, return_trace=False):
-        """P (N,M,K), QR (N,M) = Q*R, present (N,M) -> fused (N,K), weights (N,M)."""
-        base = self.a * np.log(np.clip(QR, 1e-4, 1))
-        w = self._softmax(base, present)
-        p = (w[:, :, None] * P).sum(1)
-        y = p.argmax(1)
-        iters = np.zeros(len(P), dtype=int)
-        for _ in range(self.max_iter):
-            pi = self.W_prior[y]                                    # (N, M)
-            pen = np.where(P.argmax(2) == y[:, None], 1.0, self.rho)
-            logits = base + self.b * np.log(np.clip(pi, 1e-4, 1)) + self.g * np.log(pen)
-            w_new = self._softmax(logits, present)
-            p_new = (w_new[:, :, None] * P).sum(1)
-            y_new = p_new.argmax(1)
-            moving = (y_new != y) | (np.abs(w_new - w).max(1) >= self.tol)
-            iters += moving
-            w, p, y = w_new, p_new, y_new
-            if not moving.any():
-                break
-        if self.temperature != 1.0:
-            lp = np.log(np.clip(p, EPS, 1)) / self.temperature
-            p = np.exp(lp - lp.max(1, keepdims=True))
-            p = p / p.sum(1, keepdims=True)
-        return (p, w, iters) if return_trace else (p, w)
-```
-
-**A.5  Occlusion check of the quality agent** (file: `src/agents/quality.py`)
+**A.4  Occlusion check of the quality agent** (file: `src/agents/quality.py`)
 
 ```
 def _centre(g: np.ndarray) -> np.ndarray:
@@ -195,7 +138,7 @@ def flat_fraction(g: np.ndarray, block: int = 8, tol: float = 0.004) -> float:
     return float((b.std(axis=(1, 3)) < tol).mean())
 ```
 
-**A.6  Quality and missing-details gates in the agent pipeline** (file: `src/agents/pipeline.py`)
+**A.5  Quality and missing-details gates in the agent pipeline** (file: `src/agents/pipeline.py`)
 
 ```
 def has_details(metadata: Optional[Dict]) -> bool:
@@ -287,63 +230,7 @@ def has_details(metadata: Optional[Dict]) -> bool:
         return result
 ```
 
-**A.7  Routing a case in the care platform** (file: `src/care/service.py`)
-
-```
-    def _route(self, cid: int, action: str, urgency: Optional[str],
-               change: Optional[Dict], tier: Optional[str] = None) -> None:
-        s = self.store
-        if change and change["alert"]:
-            s.set_status(cid, CaseStatus.AWAITING_DOCTOR, "URGENT")
-            s.add_message(cid, "system", "instruction",
-                          "Your new photo shows a change compared with last time. A "
-                          "doctor will review it urgently. Please do not wait for your "
-                          "next scheduled check.")
-            return
-
-        if action == "ACQUIRE":
-            s.set_status(cid, CaseStatus.AWAITING_PATIENT, urgency)
-            target = getattr(self, "_last_acquire_target", None)
-            s.add_message(cid, "system", "instruction",
-                          DETAILS_HOWTO if target == "metadata" else ACQUIRE_HOWTO)
-            return
-
-        if action == "DEFER":
-            s.set_status(cid, CaseStatus.AWAITING_DOCTOR, urgency)
-            when = "within 48 hours" if urgency == "URGENT" else "within 7 days"
-            s.add_message(cid, "system", "instruction",
-                          f"A doctor will review your case {when}. If the spot bleeds, "
-                          f"grows quickly or becomes painful before then, see a doctor "
-                          f"in person straight away.")
-            return
-
-        if action == "PROCEED" and tier == "LOW":
-            # The patient already has the (clearly labelled) low-confidence
-            # answer; a doctor must confirm it before anyone acts on it.
-            s.set_status(cid, CaseStatus.AWAITING_DOCTOR, urgency)
-            when = "within 48 hours" if urgency == "URGENT" else "within 7 days"
-            s.add_message(cid, "system", "instruction",
-                          f"Because this assessment is low confidence, a doctor will "
-                          f"confirm it {when}. If the spot bleeds, grows quickly or "
-                          f"becomes painful before then, see a doctor in person.")
-            return
-
-        # PROCEED, HIGH confidence
-        s.set_status(cid, CaseStatus.ASSESSED, urgency)
-        days = AUTO_FOLLOWUP_DAYS.get(("PROCEED", urgency or "ROUTINE"))
-        if days:
-            due = (_today() + timedelta(days=days)).date().isoformat()
-            reason = ("check that the specialist appointment happened"
-                      if urgency == "URGENT" else "routine re-photo to watch for change")
-            s.add_followup(cid, due, reason, created_by="system")
-            s.add_message(cid, "system", "instruction",
-                          f"Follow-up: on or after {due}, please "
-                          + ("confirm you have seen a dermatologist."
-                             if urgency == "URGENT" else
-                             "upload a new photo of the same spot, taken the same way."))
-```
-
-**A.8  Data deletion** (file: `src/care/service.py`)
+**A.6  Data deletion** (file: `src/care/service.py`)
 
 ```
     def _remove_uploads(self, paths) -> int:

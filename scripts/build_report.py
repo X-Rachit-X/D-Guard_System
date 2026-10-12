@@ -67,7 +67,7 @@ def add_inline(par, text, size=12, base_bold=False, font=FONT):
             set_run(par.add_run(tok), size, base_bold, font=font)
 
 
-def fmt(par, align=WD_ALIGN_PARAGRAPH.JUSTIFY, spacing=1.5, before=0, after=6, indent=None):
+def fmt(par, align=WD_ALIGN_PARAGRAPH.JUSTIFY, spacing=1.5, before=0, after=3, indent=None):
     pf = par.paragraph_format
     par.alignment = align
     pf.line_spacing = spacing
@@ -205,10 +205,10 @@ class Builder:
         from PIL import Image as _I
         with _I.open(path) as im:
             ratio = im.height / im.width
-        if 15.5 * ratio > 19.0:          # tall screenshots: cap the height so they fit a page
-            p.add_run().add_picture(str(path), height=Cm(19.0))
+        if 12.5 * ratio > 9.5:           # tall figures/screenshots: cap the height
+            p.add_run().add_picture(str(path), height=Cm(9.5))
         else:
-            p.add_run().add_picture(str(path), width=Cm(15.5))
+            p.add_run().add_picture(str(path), width=Cm(12.5))
         fmt(p, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 6, 2)
         keep_with_next(p)
         c = self.doc.add_paragraph()
@@ -459,10 +459,86 @@ def main() -> int:
         set_par_text(kp, "Keywords: " + meta["keywords"])
         kp.runs[0].italic = True
 
+    # the template ends the abstract with a page break; chapter 1 gets a section break
+    # from Word, so drop page breaks in the empty paragraphs after the keywords line
+    tail_front = list(doc.element.body)
+    for el in reversed(tail_front):
+        if el.tag != qn("w:p"):
+            continue
+        if "".join(t.text or "" for t in el.iter(qn("w:t"))).strip():
+            break
+        for br in list(el.iter(qn("w:br"))):
+            if br.get(qn("w:type")) == "page":
+                br.getparent().remove(br)
+
     # ---------------------------------------------------------------- chapters
+    # citations: [@key] in the sources -> [n], numbered in alphabetical order of first author
+    refs = json.loads((ROOT / args.source / "refs.json").read_text(encoding="utf-8"))["refs"]
+
+    def sort_key(k):
+        t = refs[k]
+        if t.startswith('"'):
+            return re.sub(r"[^a-z]", "", t[1:].split(":")[0].lower())
+        head = t.split(",")[0].split(" and ")[0].replace(" et al.", "")
+        if "MILK" in head:
+            return "milk"
+        return head.split()[-1].lower() + t.lower()
+    order = sorted(refs, key=sort_key)
+    num = {k: i + 1 for i, k in enumerate(order)}
+    ref_list = "# *References\n\n" + "\n".join(f"{num[k]}. {refs[k]}" for k in order) + "\n"
+
     b = Builder(doc)
     for f in sorted((ROOT / args.source).glob("*.md")):
-        b.render(f.read_text(encoding="utf-8"))
+        md = ref_list if f.name.startswith("11_references") else f.read_text(encoding="utf-8")
+        missing = set(re.findall(r"\[@([a-z0-9]+)\]", md)) - set(num)
+        if missing:
+            raise SystemExit(f"{f.name}: unknown references {sorted(missing)}")
+        md = re.sub(r"\[@([a-z0-9]+)\]", lambda m: f"[{num[m.group(1)]}]", md)
+        b.render(md)
+
+    # front-matter headings carry their own page break, so a list that exactly fills a page
+    # cannot push an empty page-break paragraph onto a blank page of its own
+    heads = ("ACKNOWLEDGEMENT", "CONTENTS", "LIST OF TABLES", "LIST OF FIGURES",
+             "LIST OF ABBREVIATIONS", "ABSTRACT")
+    P = doc.paragraphs
+    for k in range(1, len(P)):
+        if P[k].text.strip() in heads:
+            j = k - 1
+            empties = []
+            while j >= 0 and not P[j].text.strip():
+                el = P[j]._element
+                if el.find(".//" + qn("w:sectPr")) is not None or el.find(".//" + qn("w:drawing")) is not None:
+                    break
+                empties.append(el)
+                j -= 1
+            if any(e.find(".//" + qn("w:br")) is not None for e in empties):
+                for e in empties:
+                    e.getparent().remove(e)
+                P[k].paragraph_format.page_break_before = True
+    P = doc.paragraphs
+    # no empty paragraph after the last table/text: it would spill onto a blank last page
+    body = doc.element.body
+    while True:
+        last = [c for c in body if c.tag == qn("w:p")]
+        if not last:
+            break
+        el = last[-1]
+        if "".join(t.text or "" for t in el.iter(qn("w:t"))).strip() or el.find(".//" + qn("w:sectPr")) is not None                 or el.find(".//" + qn("w:drawing")) is not None:
+            break
+        body.remove(el)
+    # Word requires a paragraph after a final table; make it 1 pt so it never needs a page
+    tail = OxmlElement("w:p")
+    pPr = OxmlElement("w:pPr")
+    sp = OxmlElement("w:spacing")
+    sp.set(qn("w:before"), "0"); sp.set(qn("w:after"), "0")
+    sp.set(qn("w:line"), "20"); sp.set(qn("w:lineRule"), "exact")
+    pPr.append(sp)
+    rPr = OxmlElement("w:rPr")
+    sz = OxmlElement("w:sz"); sz.set(qn("w:val"), "2")
+    rPr.append(sz); pPr.append(rPr)
+    tail.append(pPr)
+    sect = body.find(qn("w:sectPr"))
+    (sect.addprevious(tail) if sect is not None else body.append(tail))
 
     # ---------------------------------------------------------------- lists
     T = doc.tables
@@ -501,8 +577,12 @@ def main() -> int:
         f = rng.Find
         if f.Execute(FindText=b.toc[0][3], MatchCase=True):
             start = rng.Start
-            d.Range(start, start).InsertBreak(2)            # wdSectionBreakNextPage
-            body_sec = d.Range(start + 1, start + 1).Sections(1).Index
+            before = d.Range(max(start - 1, 0), max(start - 1, 0)).Sections(1).Index
+            here = d.Range(start, start).Sections(1).Index
+            if before == here:                               # no section break there yet
+                d.Range(start, start).InsertBreak(2)        # wdSectionBreakNextPage
+                start += 1
+            body_sec = d.Range(start, start).Sections(1).Index
             for i in range(1, d.Sections.Count + 1):
                 sec = d.Sections(i)
                 for k in (1, 2, 3):                          # primary, first page, even
@@ -557,6 +637,11 @@ def main() -> int:
             if k + 2 <= d.Tables(3).Rows.Count:
                 put(d.Tables(3).Cell(k + 2, 2), page_of(prefix))
 
+        # front-matter lists (contents, tables, figures, abbreviations): single-spaced
+        for i in range(1, min(4, d.Tables.Count) + 1):
+            pf = d.Tables(i).Range.ParagraphFormat
+            pf.SpaceBefore, pf.SpaceAfter, pf.LineSpacingRule = 0, 0, 0
+            d.Tables(i).Rows.HeightRule = 0           # wdRowHeightAuto
         # 2. body tables: fit the columns to their content, then to the page width
         for i in range(5, d.Tables.Count + 1):
             t = d.Tables(i)

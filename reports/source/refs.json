@@ -1,0 +1,30 @@
+{
+ "refs": {
+  "ltt": "A. N. Angelopoulos, S. Bates, E. J. Candès, M. I. Jordan and L. Lei, \"Learn then test: Calibrating predictive algorithms to achieve risk control,\" *The Annals of Applied Statistics*, 2025.",
+  "chow": "C. K. Chow, \"On optimum recognition error and reject tradeoff,\" *IEEE Transactions on Information Theory*, vol. 16, no. 1, pp. 41-46, 1970.",
+  "em": "A. P. Dempster, N. M. Laird and D. B. Rubin, \"Maximum likelihood from incomplete data via the EM algorithm,\" *Journal of the Royal Statistical Society: Series B*, vol. 39, no. 1, pp. 1-38, 1977.",
+  "esteva": "A. Esteva, B. Kuprel, R. A. Novoa, J. Ko, S. M. Swetter, H. M. Blau and S. Thrun, \"Dermatologist-level classification of skin cancer with deep neural networks,\" *Nature*, vol. 542, pp. 115-118, 2017.",
+  "geifman": "Y. Geifman and R. El-Yaniv, \"Selective classification for deep neural networks,\" in *Advances in Neural Information Processing Systems*, 2017.",
+  "guo": "C. Guo, G. Pleiss, Y. Sun and K. Q. Weinberger, \"On calibration of modern neural networks,\" in *Proc. International Conference on Machine Learning (ICML)*, 2017.",
+  "tmc": "Z. Han, C. Zhang, H. Fu and J. T. Zhou, \"Trusted multi-view classification,\" in *Proc. International Conference on Learning Representations (ICLR)*, 2021.",
+  "resnet": "K. He, X. Zhang, S. Ren and J. Sun, \"Deep residual learning for image recognition,\" in *Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR)*, 2016, pp. 770-778.",
+  "derm7pt": "J. Kawahara, S. Daneshvar, G. Argenziano and G. Hamarneh, \"Seven-point checklist and skin lesion classification using multitask multimodal neural nets,\" *IEEE Journal of Biomedical and Health Informatics*, vol. 23, no. 2, pp. 538-546, 2019.",
+  "lee": "K. Lee, K. Lee, H. Lee and J. Shin, \"A simple unified framework for detecting out-of-distribution samples and adversarial attacks,\" in *Advances in Neural Information Processing Systems*, 2018.",
+  "lu": "C. Lu, A. Lemay, K. Chang, K. Höbel and J. Kalpathy-Cramer, \"Fair conformal predictors for applications in medical imaging,\" in *Proc. AAAI Conference on Artificial Intelligence*, 2022.",
+  "mehta": "D. Mehta, C. Primiero, B. Betz-Stablein, T. D. Nguyen, Y. Gal, A. Bowling, M. Haskett, M. Sashindranath, P. Bonnington, V. Mar, H. P. Soyer and Z. Ge, \"Multi-task AI models in dermatology: Overcoming critical clinical translation challenges for enhanced skin lesion diagnosis,\" *Journal of the European Academy of Dermatology and Venereology*, vol. 39, no. 12, pp. 2121-2133, 2025, doi: 10.1111/jdv.20551.",
+  "milk": "MILK study team, \"MILK10k: Multimodal imaging of lesions with knowledge,\" ISIC Archive, 2025. [Online]. Available: https://www.isic-archive.com",
+  "l2d": "H. Mozannar and D. Sontag, \"Consistent estimators for learning to defer to an expert,\" in *Proc. International Conference on Machine Learning (ICML)*, 2020.",
+  "pad": "A. G. C. Pacheco et al., \"PAD-UFES-20: A skin lesion dataset composed of patient data and clinical images collected from smartphones,\" *Data in Brief*, vol. 32, 106221, 2020.",
+  "metablock": "A. G. C. Pacheco and R. A. Krohling, \"An attention-based mechanism to combine images and metadata in deep learning models applied to skin cancer classification,\" *IEEE Journal of Biomedical and Health Informatics*, vol. 25, no. 9, pp. 3554-3563, 2021.",
+  "lac": "M. Sadinle, J. Lei and L. Wasserman, \"Least ambiguous set-valued classifiers with bounded error levels,\" *Journal of the American Statistical Association*, vol. 114, no. 525, pp. 223-234, 2019.",
+  "edl": "M. Sensoy, L. Kaplan and M. Kandemir, \"Evidential deep learning to quantify classification uncertainty,\" in *Advances in Neural Information Processing Systems*, 2018.",
+  "shafer": "G. Shafer, *A Mathematical Theory of Evidence*. Princeton University Press, 1976.",
+  "traub": "J. Traub, T. J. Bungert, C. T. Lüth, M. Baumgartner, K. H. Maier-Hein, L. Maier-Hein and P. F. Jaeger, \"Overcoming common flaws in the evaluation of selective classification systems,\" in *Advances in Neural Information Processing Systems*, 2024.",
+  "panderm": "S. Yan et al., \"A multimodal vision foundation model for clinical dermatology,\" *Nature Medicine*, 2025.",
+  "zadrozny": "B. Zadrozny and C. Elkan, \"Transforming classifier scores into accurate multiclass probability estimates,\" in *Proc. ACM SIGKDD International Conference on Knowledge Discovery and Data Mining*, 2002.",
+  "cama": "T. Rheude et al., \"Cohort-based active modality acquisition,\" *arXiv preprint* arXiv:2505.16791, 2025.",
+  "fayyad": "J. Fayyad et al., \"Empirical validation of conformal prediction for trustworthy skin lesions classification,\" *Computer Methods and Programs in Biomedicine*, 2024, doi: 10.1016/j.cmpb.2024.108231.",
+  "jiadf": "\"JI-ADF: Joint-individual learning with adaptive decision fusion for multimodal skin lesion classification,\" *arXiv preprint* arXiv:2604.27343, 2026.",
+  "muller": "C. Müller et al., \"Comparative and complementary diagnostic value of dermatoscopy and clinical close-up photography in skin cancer diagnosis: a study from the MILK10k dataset,\" *Journal of the American Academy of Dermatology*, 2026, doi: 10.1016/j.jaad.2026.03.069."
+ }
+}

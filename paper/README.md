@@ -44,7 +44,8 @@ Also available for a longer version or slides: `fig_risk_coverage` (risk–cover
 
 ## Before submitting
 
-- [ ] Confirm the author block (names, emails, order).
+- [ ] Confirm the author block (names, emails, order); add teammates' registration numbers if wanted.
+- [ ] The JI-ADF reference has no author list in our dossier — fill it from the arXiv page (2604.27343).
 - [ ] If more training seeds are run (`scripts/run_seeds.py`), add mean ± sd and update the
       Limitations paragraph.
 - [ ] The paper describes the earlier prototype's evaluation problems (Section V-E). Agree on

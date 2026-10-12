@@ -20,6 +20,7 @@
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{multirow}
 \usepackage[hidelinks]{hyperref}
 \graphicspath{{figures/}}
@@ -38,7 +39,7 @@
 Evidence Acquisition and Deferral for Multimodal Dermatology}
 
 \author{
-\IEEEauthorblockN{Rachit Agarwal}
+\IEEEauthorblockN{Rachit Agarwal (23BCE1577)}
 \IEEEauthorblockA{\textit{School of Computer Science and Engineering} \\
 \textit{VIT Chennai}, Chennai, India \\
 rachit.agarwal2022@vitstudent.ac.in}
@@ -120,6 +121,8 @@ predictions toward preset accuracy targets (Section~\ref{sec:legacy}). We kept t
 replaced every hand-set number with one fitted on validation data, and made every result
 a script that can be re-run.
 
+Our two base papers (Section~\ref{sec:related}) are HOT AI \cite{mehta2025hotai}, the closest task, which asks for a dermoscopic image when the photograph is not enough, and Learn-then-Test \cite{angelopoulos2025ltt}, which provides the statistical guarantee. We compare against both, or against a faithful baseline built from them, on the same probabilities.
+
 \textbf{Contributions.} (i) A six-specialist team whose per-case weights are learned from
 all of the evidence manager's signals, chosen from seven rules by cross-fitted validation,
 with an exhaustive subset study and an oracle ceiling. (ii) A calibrated four-outcome
@@ -131,38 +134,74 @@ and an honest re-evaluation of the earlier prototype's seven models. (v) A worki
 platform, with every system variant available side by side in its interface.
 
 % =============================================================================
-\section{Related Work}
+\section{Base Papers and Related Work}\label{sec:related}
 
-\textbf{Skin-lesion classification.} After Esteva \textit{et al.} \cite{esteva2017}, the
-ISIC challenges \cite{codella2019isic} and datasets such as HAM10000
-\cite{tschandl2018ham} made dermoscopic classification a standard benchmark, usually on
-ImageNet-pretrained residual networks \cite{he2016resnet}; dermatology foundation models
-such as PanDerm \cite{yan2025panderm} are the current frontier. Multimodal work combines
-images with metadata through attention-like gating \cite{pacheco2021metablock} or uses
-paired clinical and dermoscopic images \cite{kawahara2019derm7pt}. PAD-UFES-20
-\cite{pacheco2020padufes} and MILK10k \cite{milk10k} provide smartphone photographs with
-metadata and paired clinical--dermoscopic images, respectively, and multi-task models can
-recommend when dermoscopy is needed \cite{mehta2025hotai}. None of these decide whether a
-prediction should be issued at all.
+\textbf{Base paper 1: HOT AI} \cite{mehta2025hotai} is the closest task. From a clinical
+image it produces a hierarchical diagnosis, an out-of-distribution alert and a
+recommendation to take a dermoscopic image when the photograph alone is not enough, and
+then fuses both images. It establishes that an AI which asks for dermoscopy is not new.
+What \dguard{} adds is an explicit cost for acquiring and for deferring, a separate defer
+action for contradictory evidence, a certified bound on missed cancers, and stress tests on
+a public paired dataset. Because HOT AI's model and data are not public, we compare against
+a HOT-style rule built from it: ask the most uncertain patients for dermoscopy, at the same
+rate as our policy, on the same probabilities.
 
-\textbf{Uncertainty and evidential fusion.} Evidential deep learning \cite{sensoy2018edl}
-places a Dirichlet over class probabilities and yields a per-case ignorance mass grounded
-in subjective logic \cite{josang2016} and Dempster--Shafer theory
-\cite{dempster1967,shafer1976}. Trusted multi-view classification \cite{han2021tmc}
-combines per-view opinions with Dempster's rule so that uninformative views fall silent.
-Temperature scaling \cite{guo2017calibration} and isotonic regression
-\cite{zadrozny2002isotonic} calibrate confidences, and Mahalanobis distances
-\cite{lee2018mahalanobis} with shrinkage covariance \cite{ledoit2004} detect unusual inputs.
+\textbf{Base paper 2: Learn-then-Test} \cite{angelopoulos2025ltt} chooses decision
+thresholds on held-out data so that a chosen risk is bounded with a finite-sample guarantee
+when future cases resemble the calibration cases. We use it unchanged for the risk that
+matters here, the share of answered cancers called benign, inside a three-action policy, and
+we measure what happens to the guarantee on two other datasets.
 
-\textbf{Abstention, deferral and risk control.} Chow's rule \cite{chow1970}, selective
-classification \cite{geifman2017selective} and learning to defer \cite{mozannar2020defer}
-decide when not to answer; AUGRC \cite{traub2024augrc} evaluates them. Conformal prediction
-\cite{vovk2005,angelopoulos2021gentle,romano2020aps,sadinle2019lac}, including
-class-conditional variants \cite{lu2022fair}, gives distribution-free set guarantees, and
-Learn-then-Test \cite{angelopoulos2025ltt} and conformal risk control
-\cite{angelopoulos2022crc} extend them to general risks. Our contribution is their
-integration in one decision with learned multi-specialist evidence and measured evidence
-acquisition, evaluated against simple baselines on the same probabilities.
+\textbf{Data and evaluation.} MILK10k \cite{milk10k} pairs a clinical close-up and a
+dermoscopic image for every lesion; a reader study on it \cite{muller2026jaad} found that
+dermoscopy has higher sensitivity for malignancy and the close-up higher specificity, each
+adding value, which is the clinical reason to ask for dermoscopy selectively. JI-ADF
+\cite{jiadf2026} reports multimodal fusion on MILK10k's hidden test, which we did not use, so
+its numbers are not comparable with ours. We evaluate abstention with AUGRC
+\cite{traub2024augrc} and matched-coverage comparisons, and acquisition against random and
+oracle bounds in the spirit of CAMA \cite{rheude2025cama}.
+
+\textbf{Classification and fusion.} Deep networks reached dermatologist level on curated
+images \cite{esteva2017}, typically on residual networks \cite{he2016resnet}; dermatology
+foundation models \cite{yan2025panderm} are the frontier. Multimodal work fuses images with
+metadata \cite{pacheco2021metablock} or pairs clinical and dermoscopic images
+\cite{kawahara2019derm7pt}; PAD-UFES-20 \cite{pacheco2020padufes} provides smartphone
+photographs with metadata. These models improve the prediction that a policy sits on; fusion
+is a component here, not the contribution.
+
+\textbf{Uncertainty, conformal sets and deferral.} Evidential deep learning
+\cite{sensoy2018edl} and Dempster--Shafer fusion \cite{shafer1976,han2021tmc} give per-case
+ignorance and conflict; temperature scaling \cite{guo2017calibration}, isotonic regression
+\cite{zadrozny2002isotonic} and Mahalanobis scores \cite{lee2018mahalanobis} calibrate and
+detect unusual inputs. Conformal prediction has been validated for skin lesions
+\cite{fayyad2024cp}, made group-conditional by skin type \cite{lu2022fair}, and is smallest
+on average in its least-ambiguous form \cite{sadinle2019lac}. Chow's rule \cite{chow1970},
+selective classification \cite{geifman2017selective} and learning to defer
+\cite{mozannar2020defer} decide when not to answer. Each ingredient exists; the open question
+is whether combining a cost model, a statistical guarantee, a three-action policy and
+combined-failure testing on public paired data measurably helps.
+
+\begin{table}[t]
+\centering
+\caption{The two base papers (top) and the other methods we compare against, with what we
+measured (MILK10k test, $c_{\mathrm{miss}}=5$).}
+\label{tab:base}
+\setlength{\tabcolsep}{2pt}
+\scriptsize
+\begin{tabular}{>{\raggedright\arraybackslash}p{1.45cm}>{\raggedright\arraybackslash}p{2.45cm}>{\raggedright\arraybackslash}p{3.7cm}}
+\toprule
+Work & Its contribution & Our use and measured result \\
+\midrule
+HOT AI \cite{mehta2025hotai} & asks for dermoscopy when the photo is insufficient; OOD alert & adds costs, defer action, certified bound; HOT-style ``ask the most uncertain'' rule: acquisition efficiency +0.26 vs +0.07 for our estimator (it wins), but answering everyone afterwards misses 5.6\% vs 3.1\% for our confident answers \\
+Learn-then-Test \cite{angelopoulos2025ltt} & risk-controlling thresholds & certified at both stages ($\hat\lambda$ 0.218, 0.276); held on PAD-UFES-20 (0.0\%) and Derm7pt (3.8\%) \\
+\midrule
+Learning to defer \cite{mozannar2020defer} & learned deferral & L2D-style rejector misses 4.9\% vs our 3.1\% ($p=0.011$) \\
+Confidence threshold \cite{geifman2017selective} & selective classification & 3.8\% vs 3.1\% (n.s.); 3.5--9.3\% across four fusions \\
+AUGRC \cite{traub2024augrc} & abstention metric & ignorance 0.0820 vs softmax 0.0757 (softmax better) \\
+MILK10k \cite{milk10k}, \cite{muller2026jaad} & paired data; each modality adds value & dermoscopy head AUROC 0.854 vs photo 0.787; fused 0.885 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 % =============================================================================
 \section{Data and Evaluation Protocol}\label{sec:data}
@@ -232,7 +271,7 @@ applied unchanged; its six classes are mapped to MILK10k and mixed with 10\% uni
 so unsupported classes are unknown rather than impossible.
 
 \textbf{S5, S6: case-based specialists.} S5 is a vote of the 15 most similar training
-lesions in embedding space, weighted by $\exp(5\,\mathrm{sim})$ \cite{cover1967knn}. S6 is a
+lesions in embedding space, weighted by $\exp(5\,\mathrm{sim})$. S6 is a
 multinomial logistic regression over all training embeddings with class weights inversely
 proportional to frequency, so that rare diagnoses are not drowned out; its regularisation
 was chosen on validation.
@@ -244,16 +283,16 @@ For specialist $m$ on case $x$ the evidence manager computes ten signals: qualit
 $R_m$ (logistic regression fitted on validation predicting whether $m$ is right),
 normalised entropy $U_m$, confidence, margin, agreement with the other specialists, the
 measured track record $\pi_m(\hat y_0)=\Pr(m\text{ correct}\mid y=\hat y_0)$ at the
-provisional diagnosis, the team's Jensen--Shannon consistency \cite{lin1991js},
+provisional diagnosis, the team's Jensen--Shannon consistency,
 missingness, and the Mahalanobis out-of-distribution distance
-\cite{lee2018mahalanobis,ledoit2004}. The earlier prototype multiplied hand-set versions,
+\cite{lee2018mahalanobis}. The earlier prototype multiplied hand-set versions,
 $E_m=Q_mR_mU_mCSM_m$, and normalised them into weights; because consistency $C$ and
 sufficiency $S$ are equal for all specialists of a case, they cancelled, and only three
 signals ever moved the weights.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.92\columnwidth]{fig_trust_table}
+\includegraphics[width=0.8\columnwidth]{fig_trust_table}
 \caption{The measured trust table $\pi_m(c)$: on validation lesions of each true class,
 how often each specialist alone names it. The prototype typed this table in by hand; for
 melanoma it assumed 0.96 for the photograph, where 0.52 is measured.}
@@ -334,7 +373,7 @@ dermoscopic image or the missing details arrive, the case is assessed again.}
 Around the policy, a quality agent advises on retakes, a scribe raises triage urgency when
 the patient's own words mention warning signs (with negation handling; it never changes
 the diagnosis), a librarian shows similar confirmed \emph{training} lesions
-\cite{lewis2020rag}, an explainer states who said what, why dissenting specialists
+, an explainer states who said what, why dissenting specialists
 disagree and where the weight went, and a report writer may use a local language model
 whose output is discarded if a verifier finds any diagnosis or percentage not in the
 evidence. A care platform built on SQLite routes each outcome: a confident answer schedules a
@@ -440,7 +479,7 @@ was the best judge, and the single malignant-other lesion is never found.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig_per_class_f1}
+\includegraphics[width=0.95\columnwidth]{fig_per_class_f1}
 \caption{Per-class F1 on the test set with dermoscopy: the evidential network alone and
 the full team. $n$ is the number of test lesions.}
 \label{fig:perclass}
@@ -448,7 +487,7 @@ the full team. $n$ is the number of test lesions.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.78\columnwidth]{fig_calibration}
+\includegraphics[width=0.62\columnwidth]{fig_calibration}
 \caption{Reliability diagram on the test set: the calibrated confidence that the
 application displays tracks the observed accuracy.}
 \label{fig:calib}
@@ -499,7 +538,7 @@ at 57\% coverage.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.9\columnwidth]{fig_risk_coverage}
+\includegraphics[width=0.78\columnwidth]{fig_risk_coverage}
 \caption{Share of answered cancers called benign against the share of patients answered,
 for abstention by confidence and by $1-u$; the points are \dguard{}'s \HIGH\ tier and the
 learned rejector at the same coverage.}
@@ -508,7 +547,7 @@ learned rejector at the same coverage.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig_backend_robustness}
+\includegraphics[width=0.9\columnwidth]{fig_backend_robustness}
 \caption{The identical policy over four fusion back-ends (iterative EM or learned gate,
 with five or six specialists). The policy's missed-cancer rate stays at 3.0--3.5\%;
 confidence thresholding at the same coverage ranges from 3.5\% to 9.3\%.}
@@ -534,7 +573,7 @@ therefore a dial a deploying clinic can set, not a hidden constant.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.9\columnwidth]{fig_outcomes_cost}
+\includegraphics[width=0.76\columnwidth]{fig_outcomes_cost}
 \caption{Outcome shares (bars) and the missed-cancer rate of \HIGH\ answers (line) as the
 cost of a missed cancer increases.}
 \label{fig:cost}
@@ -548,7 +587,7 @@ calibration needs more lighter-tone data than the dataset contains.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.8\columnwidth]{fig_skin_tone}
+\includegraphics[width=0.66\columnwidth]{fig_skin_tone}
 \caption{\HIGH\ share and missed cancers among \HIGH\ answers by MILK10k skin-tone class.}
 \label{fig:tone}
 \end{figure}
@@ -624,7 +663,7 @@ training so that they measure what a deployment would meet.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.9\columnwidth]{fig_shift}
+\includegraphics[width=0.78\columnwidth]{fig_shift}
 \caption{Share of \HIGH\ answers, their accuracy and the cancers missed among them, on
 MILK10k and the two external datasets.}
 \label{fig:shift}
@@ -634,7 +673,7 @@ MILK10k and the two external datasets.}
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=\columnwidth]{fig_legacy_models}
+\includegraphics[width=0.95\columnwidth]{fig_legacy_models}
 \caption{The earlier prototype's seven PAD-UFES-20 models: accuracy as reported, re-scored
 with the same weights on the same test photographs, and on photographs of patients never
 seen in training. Dashed: the seven fused by \dguard{}'s learned gate (cross-validated).}
@@ -690,7 +729,7 @@ than free text, so the analysis supports the rule's direction, not its exact wor
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.85\columnwidth]{fig_symptoms}
+\includegraphics[width=0.7\columnwidth]{fig_symptoms}
 \caption{Relative risk of cancer with each warning sign on the PAD-UFES-20
 questionnaire (95\% CI). All exceed one.}
 \label{fig:symptoms}

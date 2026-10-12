@@ -136,6 +136,20 @@ Deeper: [05_results.md](05_results.md).
 
 ---
 
+## 8b. What the project is based on
+
+Two published papers are the **base papers**:
+
+- **HOT AI** (2025) — an AI that tells you to get a dermoscopy photo when the normal photo
+  isn't enough. *We do that too, but also put a price on asking, add a "defer to a doctor"
+  option and a "low confidence" tier, and test it under damage and on other datasets.*
+- **Learn-then-Test** (2025) — a statistics method that gives a written promise like
+  "at most 5% of answered cancers will be missed, with 90% confidence". *We use it exactly
+  as published, on the error that matters most.*
+
+Everything else (the specialist team, the Devil's Advocate) comes from our own earlier drafts.
+Details: [14_base_papers_and_contributions.md](14_base_papers_and_contributions.md).
+
 ## 9. The old project — what we kept and what we learned
 
 We kept its ideas: the specialist team, the Devil's Advocate, diagnosis-dependent trust,

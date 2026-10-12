@@ -10,7 +10,7 @@ the questions examiners (and we) kept asking. Simple English; numbers link to
 
 | Step | What we did | Why | Where |
 |---|---|---|---|
-| 1 | Read the two earlier designs: the agentic multi-model consensus (`paper/old1.tex`) and the risk-controlled acquisition/deferral design (`paper/old2.tex`) | keep the good ideas of both | `paper/README.md` |
+| 1 | Chose the two **base papers** — HOT AI (task) and Learn-then-Test (method) — from the literature dossier, and re-read our own two earlier drafts (`paper/old1.tex`, `paper/old2.tex`) | build on published work, keep our good ideas | `docs/14_base_papers_and_contributions.md` |
 | 2 | **Audited the old system** and found three problems (Part 4) | a result is only as good as its evaluation | §4 below |
 | 3 | Chose **MILK10k** and wrote an exact loader with a **lesion-level split** (no lesion in two splits) | the only public set with a photo *and* dermoscopy for every lesion — needed to test "ask for dermoscopy" | `src/data/milk10k.py` |
 | 4 | Trained the evidential network on Kaggle (ResNet50, three heads: photo, dermoscopy, details) | evidential heads give *ignorance* and *conflict*, not just a probability | `notebooks/kaggle_train_dguard.py` |

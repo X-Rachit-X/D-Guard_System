@@ -16,15 +16,12 @@ The application is started with one command, `streamlit run app/dguard_app.py`, 
 
 **Research view.** Every experimental result: headline numbers with confidence intervals, paired tests, the fusion tables and what the learned gate relies on, the decision policy against baselines at three costs, DERMA-STRESS, both external tests, the re-evaluation of the earlier prototype's models, the warning-sign analysis and the skin-tone breakdown.
 
-![Research view: experimental results with confidence intervals.](reports/screens/research.png)
 
 **Architecture view.** The pipeline drawn as a diagram, and a table linking each component to its source file.
 
-![Architecture view inside the application.](reports/screens/architecture.png)
 
 **System view.** Platform statistics, the audit log and a button to reset the demonstration database, which asks for confirmation and deletes every patient, case, message and uploaded photograph (never the dataset images).
 
-![System view: platform statistics and the audit log.](reports/screens/system.png)
 
 **REST API.** The same workflow is available programmatically with `uvicorn src.api:app --port 8000`; interactive documentation is served at /docs. The endpoints are listed in Table 5.4.
 

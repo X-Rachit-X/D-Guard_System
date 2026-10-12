@@ -115,9 +115,10 @@ Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted a
 
 ## Positioning
 
-Built from two designs: the original agentic multi-model consensus with diagnosis-adaptive
-fusion (`paper/old1.tex`), and the risk-controlled acquisition and deferral design
-(`paper/old2.tex`). The individual techniques are established; the contribution is their
+**Base papers:** HOT AI (Mehta et al., JEADV 2025) — an AI that asks for dermoscopy — and
+Learn-then-Test (Angelopoulos et al., 2025) — thresholds with a written guarantee. The project
+also implements our own two earlier drafts: the agentic multi-model consensus
+(`paper/old1.tex`) and the risk-controlled acquisition and deferral plan (`paper/old2.tex`). The individual techniques are established; the contribution is their
 integration — learned, calibrated and measured on paired clinical–dermoscopic data — plus a
 working care platform.
 

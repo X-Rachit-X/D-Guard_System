@@ -16,6 +16,8 @@ This project started from a simple question: *can an AI system be built that beh
 
 There was also a more personal motivation. This report is the second version of the project. The first version, built earlier by our team, already had many of the right ideas: a panel of specialist models, a component that questioned the evidence (which we called the Devil's Advocate), and a fusion step that weighted each source by how trustworthy it was for the suspected diagnosis. When we came back to that prototype to extend it, we audited its evaluation and found that the numbers it reported could not be trusted (Chapter 4 explains why). Rebuilding the system so that every number is real, reproducible and fairly compared became as important a goal as the system itself.
 
+The project is positioned against two **base papers** chosen from the literature (Chapter 2): HOT AI [@mehta], the closest task, which recommends a dermoscopic image when the clinical photograph is insufficient, and Learn-then-Test [@ltt], which provides the statistical guarantee. Both are either used directly or turned into a baseline that runs on the same probabilities as DERMA-GUARD; the related methods we compare against are described in Chapter 2.
+
 ## Problem Statement
 
 Given a skin lesion described by a clinical photograph, optionally a dermoscopic image, and patient details (age, sex, body site, skin tone), the system must choose one of four outcomes:

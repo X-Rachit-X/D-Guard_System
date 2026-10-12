@@ -140,7 +140,7 @@ text(s, Inches(0.8), Inches(2.7), Inches(11.7), Inches(1.4),
      "Evidence-Aware Specialist Consensus with Risk-Controlled Evidence Acquisition "
      "and Deferral for Multimodal Dermatology", 26, RGBColor(0xD9, 0xE2, 0xF3))
 text(s, Inches(0.8), Inches(4.5), Inches(11.7), Inches(1.2),
-     ["Rachit Agarwal  ·  Patel Kavya Vipulkumar  ·  Aarav Prawin",
+     ["Rachit Agarwal (23BCE1577)",
       "Guide: Dr. Sindhu Ravindran  ·  School of Computer Science and Engineering, VIT Chennai"],
      18, WHITE)
 text(s, Inches(0.8), Inches(6.3), Inches(11.7), Inches(0.6),
@@ -186,6 +186,29 @@ text(s, Inches(0.6), Inches(4.9), Inches(12.2), Inches(2.0), [
     "A calibrated, cost-aware policy picks the outcome, with a certified bound on missed cancers",
     "A care platform turns outcomes into a workflow: patient app, doctor queue, messages, follow-ups"],
     18, bullet=True)
+
+# ================================================================ 3b base papers
+s = new_slide("Base papers: what we build on",
+              "HOT AI for the task, Learn-then-Test for the guarantee",
+              "Name the two base papers clearly. HOT AI showed an AI can ask for dermoscopy; we add "
+              "costs, a defer action, a LOW tier and a certified bound, and we built a HOT-style "
+              "baseline. Learn-then-Test is used exactly as published, on the missed-cancer rate. "
+              "Our own earlier drafts (old1, old2) are where the team's ideas came from, not base papers.")
+table(s, Inches(0.4), Inches(1.9), Inches(12.5), [
+    ["", "Base paper 1: HOT AI (Mehta et al., JEADV 2025)", "Base paper 2: Learn-then-Test (Angelopoulos et al., 2025)"],
+    ["What it does", "Recommends a dermoscopic image when the photo is not enough; OOD alert",
+     "Chooses thresholds so an error rate stays below a target, with a written guarantee"],
+    ["What we add", "Costs for asking and deferring; DEFER and LOW tiers; asks for details and better photos; "
+     "certified bound; public data; stress and external tests",
+     "Applied to the error that matters most: cancers called benign among confident answers"],
+    ["How we compared", "HOT-style rule: ask the most uncertain, same rate, same probabilities",
+     "Certified at both stages; checked on PAD-UFES-20 and Derm7pt"],
+    ["Result", "It picks whom to ask better (AE +0.26 vs +0.07); but answering everyone after it misses "
+     "5.6% vs our 3.1%", "Target 5% held: MILK10k 3.1%, PAD-UFES-20 0.0%, Derm7pt 3.8%"]],
+    [2.3, 5.1, 5.1], 14, h_row=0.8)
+text(s, Inches(0.4), Inches(6.3), Inches(12.5), Inches(0.6),
+     "Also compared: learning to defer (4.9% missed), confidence threshold (3.8%), AUGRC, "
+     "CAMA-style random/oracle acquisition, MILK10k reader study.", 15, NAVY)
 
 # ================================================================ 4 data
 s = new_slide("Data and an honest protocol",
@@ -341,7 +364,7 @@ text(s, Inches(8.2), Inches(1.95), Inches(4.9), Inches(5.0), [
     "Kept: specialist team, Devil's Advocate, diagnosis-adaptive trust, Model A as S4"],
     15, bullet=True)
 text(s, Inches(0.5), Inches(6.2), Inches(7.6), Inches(0.6),
-     "Both earlier drafts (old1, old2) had no measured results: placeholders and a plan.", 14, NAVY)
+     "Our own earlier drafts (old1, old2) had no measured results: placeholders and a plan.", 14, NAVY)
 
 # ================================================================ 14 platform
 s = new_slide("The platform: try every system yourself",
@@ -400,5 +423,10 @@ rect(s, Inches(3.4), Inches(5.8), Inches(6.5), Inches(0.9), NAVY)
 text(s, Inches(3.4), Inches(5.93), Inches(6.5), Inches(0.7), "Thank you  -  questions?", 26, WHITE,
      True, PP_ALIGN.CENTER)
 
-prs.save(OUT)
+try:
+    prs.save(OUT)
+except PermissionError:                     # open in PowerPoint
+    OUT = OUT.with_name(OUT.stem + "_updated.pptx")
+    prs.save(OUT)
+    print("  the presentation is open elsewhere - wrote a copy instead")
 print(f"saved -> {OUT}  ({len(prs.slides)} slides)")

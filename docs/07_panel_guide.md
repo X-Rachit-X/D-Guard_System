@@ -253,6 +253,23 @@ exist.**
 > the Research view; the guarantee is only promised when test data resemble calibration
 > data.
 
+**Q-base. What is your base paper?**
+> Two. **HOT AI** (Mehta et al., JEADV 2025) for the task: an AI that asks for a dermoscopic
+> image when the photo is not enough. **Learn-then-Test** (Angelopoulos et al., 2025) for the
+> method: thresholds with a written guarantee on an error rate. We combine them and add
+> explicit costs, a defer action, a LOW tier, and stress tests on public paired data.
+
+**Q-hot. Isn't this just HOT AI?**
+> No. HOT AI recommends dermoscopy when uncertain. We also put a cost on asking and on
+> deferring, certify the missed-cancer rate, defer on contradictory evidence, ask for missing
+> details or a better photo, and test on two other datasets. We even built a HOT-style
+> baseline: it is better than our estimator at choosing whom to ask (we report that), but
+> answering everyone afterwards misses 5.6% of cancers; our confident answers miss 3.1%.
+
+**Q-old. Are old1 and old2 your base papers?**
+> No — they are our own earlier drafts. Draft 1 had the agentic ideas but no results; draft 2
+> was the risk-control plan. This project implements both, measured, on MILK10k.
+
 **Q4f. Why is the confidence often low?**
 > Eleven diagnoses with look-alikes and rare classes; evidential heads built to say "I don't
 > know"; and the number we show is *calibrated* — with dermoscopy, 76% shown on average

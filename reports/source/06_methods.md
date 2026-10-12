@@ -6,7 +6,7 @@ This chapter describes each component of the system in the order in which a case
 
 ### S1 to S3: the evidential network
 
-A single network serves three specialists. A ResNet50 [13], initialised from ImageNet weights, is shared by the clinical photograph and the dermoscopic image: each image is resized to 224 x 224 pixels and mapped to a 2,048-dimensional feature, then projected to a 256-dimensional embedding by a modality-specific layer. The patient details (age, sex, general and specific body site, skin tone and the seven MONET scores, 31 numbers after one-hot encoding and standardisation) pass through a residual multilayer perceptron to another 256-dimensional embedding. Each of the three embeddings feeds its own evidential head, which outputs non-negative evidence for the eleven classes through a softplus. The three opinions are combined by Dempster's rule (Section 3.2) to produce the network's fused opinion, its ignorance u and its conflict C.
+A single network serves three specialists. A ResNet50 [@resnet], initialised from ImageNet weights, is shared by the clinical photograph and the dermoscopic image: each image is resized to 224 x 224 pixels and mapped to a 2,048-dimensional feature, then projected to a 256-dimensional embedding by a modality-specific layer. The patient details (age, sex, general and specific body site, skin tone and the seven MONET scores, 31 numbers after one-hot encoding and standardisation) pass through a residual multilayer perceptron to another 256-dimensional embedding. Each of the three embeddings feeds its own evidential head, which outputs non-negative evidence for the eleven classes through a softplus. The three opinions are combined by Dempster's rule (Section 3.2) to produce the network's fused opinion, its ignorance u and its conflict C.
 
 Table: Training configuration of the evidential network (Kaggle GPU).
 | Setting | Value |
@@ -14,7 +14,7 @@ Table: Training configuration of the evidential network (Kaggle GPU).
 | Backbone | ResNet50, ImageNet initialisation, shared by both image types |
 | Input size | 224 x 224, standard augmentation (flips, rotation, colour jitter) |
 | Embedding size | 256 per modality |
-| Loss | Evidential loss [28] with KL regulariser annealed over 10 epochs, class weights |
+| Loss | Evidential loss [@edl] with KL regulariser annealed over 10 epochs, class weights |
 | Optimiser | AdamW, learning rate 1e-3 (heads) and 1e-4 (backbone), weight decay 1e-4 |
 | Schedule | Cosine annealing over 25 epochs; backbone frozen for the first 3 |
 | Modality dropout | 0.25 (a modality is randomly hidden so the network learns to work without it) |
@@ -62,7 +62,7 @@ The original prototype multiplied hand-set versions of these signals into a scor
 
 ### Iterative diagnosis-adaptive fusion (v1)
 
-The trustworthiness of a source depends on the diagnosis (dermoscopy is very reliable for squamous cell carcinoma and much less so for benign keratoses), but the diagnosis is not known until the sources are combined. The earlier prototype resolved this circularity with an EM-style loop [8], which we kept and made measurable:
+The trustworthiness of a source depends on the diagnosis (dermoscopy is very reliable for squamous cell carcinoma and much less so for benign keratoses), but the diagnosis is not known until the sources are combined. The earlier prototype resolved this circularity with an EM-style loop [@em], which we kept and made measurable:
 
 1. Start with weights w_m proportional to (Q_m R_m)^a and fuse: p = sum of w_m p_m. Take the provisional diagnosis y-hat = argmax p.
 2. Look up each specialist's measured track record pi_m(y-hat) and a penalty kappa_m = 1 if the specialist agrees with y-hat, otherwise rho.
@@ -102,7 +102,7 @@ Two further analyses help to understand the team. The **subset study** refits th
 
 In parallel with the team fusion, the three evidential heads are combined by Dempster's rule, giving the ignorance u and the conflict C (Section 3.2). Conflict is taken as the maximum over the successive pairwise combinations, so a contradiction between any two modalities is not hidden by a third. These two numbers drive the gates; the team's fused distribution provides the diagnosis.
 
-The confidence shown to users is calibrated by isotonic regression [34] fitted on the out-of-fold validation predictions of both stages: it maps the top fused probability to the observed probability that the stated diagnosis is correct.
+The confidence shown to users is calibrated by isotonic regression [@zadrozny] fitted on the out-of-fold validation predictions of both stages: it maps the top fused probability to the observed probability that the stated diagnosis is correct.
 
 ## The Decision Policy
 

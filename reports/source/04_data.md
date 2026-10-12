@@ -4,9 +4,9 @@ A medical AI system is only as trustworthy as the data it is trained on and the 
 
 ## Choosing the Main Dataset
 
-The central idea of DERMA-GUARD is that the system should be able to *ask for a dermoscopic image* when the ordinary photograph is not enough. To measure whether that request is worth making, every lesion in the dataset must have both images: the system can then be shown only the photograph first, and the real dermoscopic image of the same lesion later, exactly as would happen in a clinic. Most public datasets fail this requirement. HAM10000 [31] and the ISIC challenge sets [5] contain dermoscopy only. PAD-UFES-20 [24] contains smartphone photographs only. Derm7pt [15] contains both, but only for about one thousand lesions and five diagnostic groups.
+The central idea of DERMA-GUARD is that the system should be able to *ask for a dermoscopic image* when the ordinary photograph is not enough. To measure whether that request is worth making, every lesion in the dataset must have both images: the system can then be shown only the photograph first, and the real dermoscopic image of the same lesion later, exactly as would happen in a clinic. Most public datasets fail this requirement. HAM10000 and the ISIC challenge sets contain dermoscopy only. PAD-UFES-20 [@pad] contains smartphone photographs only. Derm7pt [@derm7pt] contains both, but only for about one thousand lesions and five diagnostic groups.
 
-**MILK10k** [22], released in 2025 by the MILK study team through the ISIC Archive, is the only large public dataset in which every lesion has one clinical close-up and one dermoscopic image. It was therefore chosen as the main dataset; the other two are used only for external testing.
+**MILK10k** [@milk], released in 2025 by the MILK study team through the ISIC Archive, is the only large public dataset in which every lesion has one clinical close-up and one dermoscopic image. It was therefore chosen as the main dataset; the other two are used only for external testing.
 
 ## MILK10k
 
@@ -44,9 +44,9 @@ Because the validation lesions are used both to fit fusion rules and to calibrat
 
 ## External Datasets
 
-**PAD-UFES-20** [24] contains 2,298 smartphone photographs of 1,641 lesions from 1,373 patients collected in Brazil, with six diagnoses (BCC, actinic keratosis, nevus, seborrheic keratosis, SCC and melanoma) and extensive patient questionnaires, including whether the lesion itches, has grown, hurts, has changed, bleeds or is raised. It has no dermoscopy. Its six classes map onto MILK10k as BCC to BCC, ACK to AKIEC, NEV to NV, SEK to BKL, SCC to SCCKA and MEL to MEL.
+**PAD-UFES-20** [@pad] contains 2,298 smartphone photographs of 1,641 lesions from 1,373 patients collected in Brazil, with six diagnoses (BCC, actinic keratosis, nevus, seborrheic keratosis, SCC and melanoma) and extensive patient questionnaires, including whether the lesion itches, has grown, hurts, has changed, bleeds or is raised. It has no dermoscopy. Its six classes map onto MILK10k as BCC to BCC, ACK to AKIEC, NEV to NV, SEK to BKL, SCC to SCCKA and MEL to MEL.
 
-**Derm7pt** [15] contains 1,011 lesions from an Italian dermoscopy atlas, each with a clinical and a dermoscopic image, sex and body site but no age. Its diagnoses were mapped as follows: every nevus subtype to NV, every melanoma to MEL, seborrheic keratosis, lentigo and melanosis to BKL, BCC to BCC, dermatofibroma to DF and vascular lesions to VASC; eight "miscellaneous" lesions were dropped, leaving 1,003. It is used to test the complete "ask for dermoscopy" loop on a different population.
+**Derm7pt** [@derm7pt] contains 1,011 lesions from an Italian dermoscopy atlas, each with a clinical and a dermoscopic image, sex and body site but no age. Its diagnoses were mapped as follows: every nevus subtype to NV, every melanoma to MEL, seborrheic keratosis, lentigo and melanosis to BKL, BCC to BCC, dermatofibroma to DF and vascular lesions to VASC; eight "miscellaneous" lesions were dropped, leaving 1,003. It is used to test the complete "ask for dermoscopy" loop on a different population.
 
 Both external datasets are used **without any retraining or recalibration**. Their images are not redistributed with this project.
 
