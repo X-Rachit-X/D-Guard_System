@@ -5,6 +5,7 @@ Fits everything on VALIDATION lesions, then scores the TEST split once:
 
     specialists   S1 clinical head · S2 dermoscopy head · S3 metadata head
                   S4 original PAD-UFES Model A · S5 kNN over training lesions
+                  S6 class-balanced logistic regression on the embeddings
     evidence      Q, learned R, U, C (JS), M, OOD (Mahalanobis) per case
     fusion        seven combination rules (src/fusion/methods.py), each fitted with
                   5-fold cross-fitting on val; the winner is picked on val
@@ -35,8 +36,8 @@ import numpy as np  # noqa: E402
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, roc_auc_score  # noqa: E402
 
 from src.constants import MILK_CLASS_NAMES, milk_malignant_indices  # noqa: E402
-from src.fusion.adaptive import (OODDetector, TeamBundle, knn_probs,  # noqa: E402
-                                 quality_score)
+from src.fusion.adaptive import (EmbeddingClassifier, OODDetector, TeamBundle,  # noqa: E402
+                                 knn_probs, quality_score)
 from src.fusion.methods import (LABELS, METHODS, fit_context, fit_method,  # noqa: E402
                                 fuse_method, oracle_best_head)
 
@@ -67,7 +68,24 @@ def metrics(y, p):
             "mal_auroc": roc_auc_score(np.isin(y, MAL), pm)}
 
 
-def build(nat, spec, train, q_ref_c, q_ref_d, stage):
+ZKEYS = {"A": ["z_img", "z_meta"], "B": ["z_img", "z_derm", "z_meta"]}
+
+
+def fit_clf(train, val, stage):
+    """S6: pick C on validation macro-F1, fit on training embeddings."""
+    Z = lambda d: np.hstack([d[k] for k in ZKEYS[stage]])  # noqa: E731
+    best, best_s = None, -1
+    for C in (0.003, 0.01, 0.03, 0.1):
+        m = EmbeddingClassifier(keys=ZKEYS[stage], C=C, K=K).fit(Z(train), train["y"])
+        s = f1_score(val["y"], m.predict(Z(val)).argmax(1), labels=list(range(K)),
+                     average="macro", zero_division=0)
+        if s > best_s:
+            best, best_s = m, s
+    print(f"S6 embedding classifier, stage {stage}: C={best.C} (val macro-F1 {best_s:.3f})")
+    return best
+
+
+def build(nat, spec, train, q_ref_c, q_ref_d, stage, clf=None):
     """Stack specialist distributions P (N,M,K), quality Q (N,M), presence (N,M)."""
     N = len(nat["y"])
     names, P, Q, pres = [], [], [], []
@@ -96,6 +114,8 @@ def build(nat, spec, train, q_ref_c, q_ref_d, stage):
                   np.hstack([train["z_img"], train["z_derm"], train["z_meta"]]))
     pk, sim = knn_probs(zq, zr, train["y"], K, k=KNN_K)
     add("knn_cases", pk, np.clip(sim, 0, 1))
+    if clf is not None:
+        add("embed_clf", clf.predict(np.hstack([spec[k] for k in clf.keys])), 1.0)
     return names, np.stack(P, 1), np.stack(Q, 1), np.stack(pres, 1)
 
 
@@ -129,6 +149,7 @@ def main() -> int:
     ap.add_argument("--no-subsets", action="store_true", help="skip the subset study")
     ap.add_argument("--native", default=str(NAT), help="milk_native_infer output")
     ap.add_argument("--spec", default=str(SPEC), help="build_specialists output")
+    ap.add_argument("--no-s6", action="store_true", help="leave out the embedding classifier")
     args = ap.parse_args()
     out_dir = Path(args.out)
     nat_dir, spec_dir = Path(args.native), Path(args.spec)
@@ -155,9 +176,12 @@ def main() -> int:
     report = {"specialists": {}, "fusion": {}, "fusion_val_oof": {}, "selected": {},
               "subsets": {}, "gate_importance": {}, "oracle": {}, "mean_weights": {}}
     team = {}
+    clfs = {}
     for stage, view in (("A", "no_dermo"), ("B", "full")):
-        names, Pv, Qv, Mv = build(nat["val"], spec["val"], train, q_ref_c, q_ref_d, stage)
-        _, Pt, Qt, Mt = build(nat["test"], spec["test"], train, q_ref_c, q_ref_d, stage)
+        clf = None if args.no_s6 else fit_clf(train, spec["val"], stage)
+        clfs[stage] = clf
+        names, Pv, Qv, Mv = build(nat["val"], spec["val"], train, q_ref_c, q_ref_d, stage, clf)
+        _, Pt, Qt, Mt = build(nat["test"], spec["test"], train, q_ref_c, q_ref_d, stage, clf)
 
         print(f"\n--- stage {stage} ({'photo + details' if stage == 'A' else '+ dermoscopy'}) ---")
         print(f"{'specialist':14} {'acc':>6} {'macroF1':>8} {'balAcc':>7} {'malAUROC':>9}")
@@ -256,7 +280,8 @@ def main() -> int:
         knn_y=train["y"], knn_k=KNN_K, q_ref_clin=q_ref_c, q_ref_derm=q_ref_d,
         confidence_calibrator=iso, report=report,
         ctx_A=team["A"]["ctx"], ctx_B=team["B"]["ctx"],
-        method_A=team["A"]["method"], method_B=team["B"]["method"])
+        method_A=team["A"]["method"], method_B=team["B"]["method"],
+        clf_A=clfs["A"], clf_B=clfs["B"])
     joblib.dump(bundle, out_dir / "team_bundle.joblib")
     (out_dir / "team_report.json").write_text(json.dumps(report, indent=2, default=float))
     print(f"\nsaved -> {out_dir}/(val|test).npz, team_bundle.joblib, team_report.json")

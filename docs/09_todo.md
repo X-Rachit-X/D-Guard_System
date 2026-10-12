@@ -28,6 +28,9 @@ Everything below is **optional** and only makes the paper's numbers final or str
 | Occlusion, grain and missing-details checks; details request | ✅ |
 | Derm7pt external test (with dermoscopy) | ✅ |
 | Explanation panel, Compare-systems view, data deletion | ✅ |
+| S6 embedding classifier; final numbers everywhere | ✅ |
+| Old Models A–G re-scored and fused (PAD-UFES-20) | ✅ |
+| Paper rewritten with figures; 100-page report in the VIT template | ✅ |
 | Seeds 7 / 2026 | ⏳ run on Kaggle, then `scripts/run_seeds.py` |
 | Care platform, web app, REST API, terminal demo | ✅ |
 | Experiments: decision engine, baselines, cost sweep, stress test | ✅ |

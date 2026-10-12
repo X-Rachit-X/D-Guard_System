@@ -15,14 +15,14 @@ and gives one of four outcomes:
 |---|---|---|
 | ✅ **Answer — HIGH confidence** | every safety check passed; calibrated answer | 54% |
 | 📷 **Ask for dermoscopy** | a close-up through a skin lens is expected to help; then it answers | 27% (then answered) |
-| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 35% |
+| ⚠️ **Answer — LOW confidence** | it still gives its best diagnosis, clearly marked low confidence, and asks a doctor to confirm | 32% |
 | 🧑‍⚕️ **Defer** | the photo and the details point to *different* diagnoses — a human must decide | 10% |
 
 **9 in 10 patients get an answer and more than half a confident one.** HIGH-confidence
-answers are **77% accurate on 11 diagnoses** and miss **3.5%** of cancers — a rate that
-stays the same whichever fusion is used, while a plain confidence threshold ranges from
-9.3% to 3.5%. A **team of five specialists**, weighted by a learned Devil's Advocate
-(picked from seven rules on validation), raises photo-only macro-F1 from 0.286 to **0.332**.
+answers are **77% accurate on 11 diagnoses** and miss **3.1%** of cancers — a rate that
+stays at 3.0–3.5% whichever fusion is used, while a plain confidence threshold ranges from
+3.5% to 9.3%. A **team of six specialists**, weighted by a learned Devil's Advocate
+(picked from seven rules on validation), raises photo-only macro-F1 from 0.286 to **0.377**.
 The system **asks** for a dermoscopy image, missing details or a better photo when needed. Around it sits a care platform: patient app, doctor review queue,
 instructions, questions, follow-ups with change detection, full audit log.
 

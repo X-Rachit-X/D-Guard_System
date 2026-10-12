@@ -123,6 +123,36 @@ class OODDetector:
         return self.score(Z) > self.threshold
 
 
+# ------------------------------------------------------- S6 embedding classifier
+@dataclass
+class EmbeddingClassifier:
+    """S6: class-balanced logistic regression on the trained network's embeddings.
+
+    The similar-case vote (S5) looks at the 15 nearest training lesions; this
+    specialist draws one linear boundary through ALL training embeddings, with
+    class weights so rare diagnoses are not drowned out. C is chosen on validation.
+    """
+    keys: List[str] = field(default_factory=list)
+    C: float = 0.01
+    mu: Optional[np.ndarray] = None
+    sd: Optional[np.ndarray] = None
+    model: object = None
+    K: int = 11
+
+    def fit(self, Z: np.ndarray, y: np.ndarray) -> "EmbeddingClassifier":
+        from sklearn.linear_model import LogisticRegression
+        self.mu, self.sd = Z.mean(0), Z.std(0) + 1e-6
+        self.model = LogisticRegression(C=self.C, max_iter=3000,
+                                        class_weight="balanced").fit((Z - self.mu) / self.sd, y)
+        return self
+
+    def predict(self, Z: np.ndarray) -> np.ndarray:
+        p = self.model.predict_proba((Z - self.mu) / self.sd)
+        out = np.full((len(Z), self.K), 1e-4)
+        out[:, self.model.classes_] = p
+        return out / out.sum(1, keepdims=True)
+
+
 # ----------------------------------------------------------- evidence manager
 def _features(P_m, Q_m, P_all, present, m):
     """Per-specialist features for the reliability model."""
@@ -282,6 +312,8 @@ class TeamBundle:
     ctx_B: object = None
     method_A: str = "adaptive_em"     # combination rule picked on validation
     method_B: str = "adaptive_em"
+    clf_A: object = None              # S6 EmbeddingClassifier per stage (None = not in team)
+    clf_B: object = None
 
 
 def quality_score(q: np.ndarray, ref: np.ndarray) -> np.ndarray:

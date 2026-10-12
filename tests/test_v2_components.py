@@ -148,3 +148,14 @@ def test_clear_messages_keeps_assessment(tmp_path):
     svc.ask(cid, "hello?")
     svc.clear_messages(cid)
     assert svc.store.messages(cid) == [] and svc.store.latest_assessment(cid) is not None
+
+
+def test_embedding_classifier_returns_full_distributions_even_for_missing_classes():
+    from src.fusion.adaptive import EmbeddingClassifier
+    rng = np.random.default_rng(0)
+    Z = rng.normal(size=(120, 8))
+    y = (Z[:, 0] > 0).astype(int) * 3          # only classes 0 and 3 present
+    clf = EmbeddingClassifier(keys=["z"], K=5).fit(Z, y)
+    p = clf.predict(Z[:10])
+    assert p.shape == (10, 5) and np.allclose(p.sum(1), 1)
+    assert (p.argmax(1) == y[:10]).mean() > 0.7

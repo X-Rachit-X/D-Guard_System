@@ -15,7 +15,7 @@ HealthSphere/
 ├── scripts/                command-line experiments (table below)
 ├── notebooks/              kaggle_train_dguard.py — training (GPU)
 ├── runs/                   trained runs: metrics + predictions in git, weights not
-├── tests/                  229 tests, ~12 seconds
+├── tests/                  230 tests, ~12 seconds
 ├── docs/                   documentation
 ├── paper/                  IEEE paper (LaTeX, Overleaf-ready)
 ├── pyproject.toml, requirements.txt, Dockerfile
@@ -79,6 +79,10 @@ src/
 | `run_shift_pad.py` | external test on PAD-UFES-20 (no dermoscopy) | ~20 min |
 | `run_shift_derm7pt.py` | external test on Derm7pt, full acquisition loop | ~30 min |
 | `run_seeds.py` | repeat everything for extra Kaggle seeds → mean ± sd | ~25 min / seed |
+| `legacy_pad_models.py` | the old project's Models A–G re-scored honestly + fused by the learned gate | ~1 min |
+| `analyze_pad_symptoms.py` | do the scribe's warning signs predict cancer? (PAD-UFES-20) | seconds |
+| `make_figures.py` | every figure for the paper and the report | seconds |
+| `build_report.py` | the 100-page project report in the university template (Word + PDF) | ~2 min |
 | `demo_care.py` | four patients end to end | ~30 s |
 
 ## 4. `docs/`
@@ -98,6 +102,7 @@ docs/
 ├── 10_project_structure.md  this file
 ├── 11_ui_guide.md           the app, view by view
 ├── 12_how_it_was_built.md   the journey, how each part was checked, claims → evidence
+├── 13_simple_guide.md       the whole project in plain words (start here)
 ├── limitations.md
 ├── what_did_not_work.md
 └── reference/               history and background: integrity audit, literature,

@@ -193,11 +193,12 @@ Code: `src/evidence/evidential.py`, `src/native/engine.py`. Paper: Han et al., I
 
 ## Part 4b — Concept 3b: A team of specialists and a Devil's Advocate
 
-One model is one opinion. D-GUARD asks **five**:
+One model is one opinion. D-GUARD asks **six**:
 
 ```
   S1 photo head        S2 dermoscopy head     S3 details head      (trained on MILK10k)
   S4 PAD-UFES Model A  (the ORIGINAL project's model — never saw MILK10k)
+  S6 embedding classifier (one class-balanced boundary through all training lesions)
   S5 similar-case vote (the 15 most similar past lesions)
 ```
 
@@ -217,19 +218,22 @@ Then **v2**: instead of a fixed formula, the Devil's Advocate *learns* how to tu
 its signals — quality, reliability, uncertainty, track record for this diagnosis,
 agreement, how unusual the case is — into weights, from validation lesions. Seven ways of
 combining are compared fairly (each fitted on 4/5 of validation, scored on the other 1/5),
-and the best on validation is used. Photo-only macro-F1: **0.286 → 0.332**.
+and the best on validation is used. A sixth specialist joined the team: an **embedding
+classifier** that draws one class-balanced boundary through all training lesions. Photo-only
+macro-F1: **0.286 → 0.377**.
 
-A *plain average* of the same five is the worst rule — the gain is in *how* they are
-weighted. The old Model A is weak on this dataset; every learned rule gives it 3–5% weight.
+Weighting matters more than the number of models: stacking (a free learned combiner) is
+worse than the structured rules, and the old Model A gets about 7% weight.
 
-**The surprise:** once the fusion is good, a simple "answer only when confident" rule is as
-safe as D-GUARD's policy (3.5% missed cancers each). With the weaker v1 fusion the simple
-rule missed 9.3% while D-GUARD still missed only 3.3%. D-GUARD's policy is **stable**; the
-simple rule is only as good as the probabilities under it.
+**The surprise:** a simple "answer only when confident" rule can be almost as safe as
+D-GUARD (3.8% vs 3.1% missed cancers) — or nearly three times worse (9.3%), depending on
+which fusion produced the probabilities. D-GUARD stayed at 3.0–3.5% on all four fusions we
+tried. D-GUARD's policy is **stable**; the simple rule is only as good as the probabilities
+under it.
 
 **Why confidence used to look low:** the probability of the top class is spread across 11
 classes. The app now shows a *calibrated* confidence — the probability that the stated
-diagnosis is actually right (74% on average with dermoscopy, against a real accuracy of 72%).
+diagnosis is actually right (76% on average with dermoscopy, against a real accuracy of 73%).
 
 ## Part 5 — Concept 4: Conformal prediction (a set with a guarantee)
 
@@ -329,8 +333,8 @@ patient waiting for a doctor with no information is a bad experience. So D-GUARD
 | **LOW** | a check fired | "Low-confidence assessment: X (52% likely). Not reliable enough to act on by itself — a doctor will confirm." + urgency |
 | **DEFER** | sources contradict | "A doctor must decide. Unconfirmed impression: X." |
 
-Results: **90% of patients get an answer, 54% a confident one.** HIGH answers: 77%
-accurate, 3.5% missed cancers. LOW answers: 54% exactly right, but the true diagnosis is in the top 3 for **82%** —
+Results: **89% of patients get an answer, 57% a confident one.** HIGH answers: 77%
+accurate, 3.1% missed cancers. LOW answers: 50% exactly right, but the true diagnosis is in the top 3 for **86%** —
 useful for the reviewing doctor, and never presented as certain.
 
 The promise from Part 6 applies to the HIGH tier, which is identical whether or not the LOW
@@ -349,7 +353,8 @@ Accuracy alone is wrong: a system that answers only easy cases looks perfect. So
   (0.0900 vs 0.0893).
 
 And we always compare at **matched coverage**: the standard approach, answering the same
-the same share of patients misses 9.3% of cancers on the v1 fusion but 3.5% on v2 —
+the same share of patients misses 3.8% of cancers on the final fusion and 9.3% on an
+earlier one, while D-GUARD stays at 3.0–3.5% —
 D-GUARD misses 3.3% / 3.5%. (See [05_results.md](05_results.md) §5.)
 
 Code: `src/eval/selective.py`.

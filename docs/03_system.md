@@ -80,7 +80,7 @@ and write. The platform routes. Only a doctor's recorded verdict overrides the e
 Queue order: review → confirm → sign-off; within each, URGENT first, then oldest.
 **URGENT** = P(malignant) ≥ 0.30 or a malignant class still in the conformal set.
 
-On the test set: HIGH 54.4% · LOW 35.1% · DEFER 10.5% · dermoscopy requested 26.3%.
+On the test set: HIGH 57.1% · LOW 32.0% · DEFER 10.9% · dermoscopy requested 29.5%.
 
 ---
 
@@ -122,7 +122,8 @@ gallery; no LLM → structured report.
 Code: `src/specialists/`, `src/fusion/adaptive.py`, `src/fusion/runtime.py`.
 Fitted by `scripts/run_team.py` on validation; used per case by the engine.
 
-**Specialists** — S1–S3 evidential heads (MILK10k), **S4 the original PAD-UFES Model A**
+**Specialists** — S1–S3 evidential heads (MILK10k), **S6 a class-balanced logistic
+regression on the network's embeddings** (C chosen on validation), **S4 the original PAD-UFES Model A**
 (ResNet50 + channel attention + MHSA ViT; its 6 classes mapped onto MILK10k), S5 a vote of
 the 15 most similar training lesions.
 

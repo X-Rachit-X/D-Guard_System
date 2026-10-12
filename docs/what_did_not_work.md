@@ -316,7 +316,7 @@ the benign lesions they answer malignant (35% before). With a 5:2 cost ratio, "p
 cancer, see a dermatologist" is the cheaper statement under doubt. Safe, but it costs
 specificity.
 
-## 30. A learned rejector is as safe as our HIGH tier (still true with v2: 3.3% vs 3.5%, p = 0.63)
+## 30. A learned rejector was as safe as our HIGH tier (until the final team: 4.9% vs 3.1%, p = 0.011)
 
 A gradient-boosted error predictor trained on validation (L2D-style), abstaining at the same
 60.2% coverage, misses 3.6% of cancers against D-GUARD's 3.0% — difference 0.6 points,
@@ -403,3 +403,20 @@ from a patient who was. The old live "vision panel" also replaced Model A's outp
 0.925 on the true class when the file was a PAD-UFES image, and its DermLIP / PanDerm / Swin
 members were arithmetic variations of Model A. Our lesion-level MILK10k numbers are lower
 and honest; the two are not comparable.
+
+## 41. Update after adding S6 (the embedding classifier)
+
+With six specialists the numbers moved again, and so did two findings:
+- the learned rejector is now **significantly less safe** than D-GUARD (4.9% vs 3.1%,
+  p = 0.011) — §30 no longer holds on the final model;
+- the confidence threshold misses 3.8% vs 3.1% (not significant) — §35 still describes the
+  pattern: across four back-ends the threshold ranges 3.5–9.3%, D-GUARD 3.0–3.5%;
+- "ask the most uncertain" now *beats* the learned acquisition estimator (AE +0.26 vs
+  +0.07) — §37 got stronger, not weaker.
+
+## 42. Smaller teams scored higher on validation but were not chosen
+
+A four-specialist subset (dermoscopy, details, Model A, embedding classifier) scored 0.550
+vs 0.517 validation macro-F1 with dermoscopy, and also higher on test (0.460 vs 0.438). It
+was not chosen: picking the best of 63 subsets on 786 validation lesions is itself a source
+of overfitting, and the rule was declared before the subset study ran.

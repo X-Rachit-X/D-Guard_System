@@ -68,3 +68,8 @@ runs/**/checkpoints/
 
 # Derm7pt images - research use only, NOT redistributable
 dataset/
+
+# report: generated files, screenshots (contain MILK10k images) and the university template
+reports/screens/
+reports/*.docx
+reports/*.pdf

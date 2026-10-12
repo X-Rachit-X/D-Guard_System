@@ -4,7 +4,10 @@
 streamlit run app/dguard_app.py        # opens http://localhost:8501
 ```
 
-The first load takes ~20 s (it loads five specialists and the calibration). After that,
+Links open a view directly: `?view=research`, `?view=compare&run=1` (runs the comparison
+on load), `?view=stress&damage=blur&run=1`.
+
+The first load takes ~20 s (it loads six specialists and the calibration). After that,
 one assessment takes about a second. Everything you see is computed live from the real
 trained models — there are no canned answers.
 
@@ -83,7 +86,7 @@ note, an instruction to the patient and an optional follow-up.
 
 | Group | Systems |
 |---|---|
-| Specialists alone | photo head, dermoscopy head, details head, PAD-UFES Model A, similar-case vote |
+| Specialists alone | photo head, dermoscopy head, details head, PAD-UFES Model A, similar-case vote, embedding classifier |
 | Fusion rules | simple average, original formula (Q·R·U), best head per case, adaptive EM (v1), stacking, Devil's Advocate v2 learned gate (mixture / product) |
 | Decision systems | always answer, B3 confidence threshold, B4 learned rejector, **D-GUARD** |
 

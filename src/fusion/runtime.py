@@ -27,6 +27,7 @@ DISPLAY = {
     "metadata": "patient-details head",
     "pad_ufes_A": "PAD-UFES Model A (original system)",
     "knn_cases": "similar-case vote",
+    "embed_clf": "embedding classifier",
 }
 
 CONSENSUS_TEXT = {
@@ -84,6 +85,14 @@ class TeamRuntime:
                     ref = b.knn_ref_B if stage == "B" else b.knn_ref_A
                     pk, sim = knn_probs(np.hstack(parts)[None], ref, b.knn_y, K, k=b.knn_k)
                     p, q, ok = pk[0], float(np.clip(sim[0], 0, 1)), True
+            elif n == "embed_clf":
+                clf = getattr(b, "clf_B" if stage == "B" else "clf_A", None)
+                parts = [z.get({"z_img": "clinical", "z_derm": "dermoscopy",
+                                "z_meta": "meta"}[k]) for k in (clf.keys if clf else [])]
+                if clf is None or any(v is None for v in parts):
+                    p, q, ok = None, 0.0, False
+                else:
+                    p, q, ok = clf.predict(np.hstack(parts)[None])[0], 1.0, True
             else:
                 p, q, ok = None, 0.0, False
             P.append(p if p is not None else np.full(K, 1.0 / K))

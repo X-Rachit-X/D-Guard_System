@@ -304,8 +304,12 @@ def messages_panel(cid, audience):
 st.sidebar.title("🩺 DERMA-GUARD")
 st.sidebar.caption("Evidence-aware specialist consensus with risk-controlled acquisition "
                    "and deferral")
-role = st.sidebar.radio("View", ["Patient", "Doctor", "Compare systems", "Stress Lab",
-                                 "Research", "Architecture", "System"])
+VIEWS = ["Patient", "Doctor", "Compare systems", "Stress Lab", "Research", "Architecture",
+         "System"]
+# deep link: ?view=research opens that view directly (handy for sharing and screenshots)
+_qv = str(st.query_params.get("view", "")).lower()
+_start = next((i for i, v in enumerate(VIEWS) if v.lower().startswith(_qv)), 0) if _qv else 0
+role = st.sidebar.radio("View", VIEWS, index=_start)
 st.sidebar.divider()
 s_ = store.stats()
 st.sidebar.metric("Cases", s_["cases"])
@@ -619,7 +623,8 @@ elif role == "Compare systems":
         groups = {"Specialists alone": "Specialist alone",
                   "Fusion rules": "fusion", "Decision systems": "decision"}
         show = st.multiselect("Show", list(groups), default=list(groups))
-        if st.button("Run every system", type="primary"):
+        auto = str(st.query_params.get("run", "")) == "1" and "cmp" not in st.session_state
+        if st.button("Run every system", type="primary") or auto:
             with st.spinner("Running..."):
                 clin = Image.open(sample["clinical_path"]).convert("RGB")
                 derm = (Image.open(sample["dermoscopy_path"]).convert("RGB")
@@ -765,8 +770,9 @@ elif role == "Stress Lab":
     names = {i: f"{s['lesion_id']}  (true: {s['true_label']})" for i, s in enumerate(samples)}
     c1, c2, c3 = st.columns([1.4, 1, 1])
     si = c1.selectbox("Lesion", list(names), format_func=names.get)
-    corr = c2.selectbox("Damage", ["none", "blur", "dark", "noise", "jpeg", "occlusion",
-                                   "remove patient details"])
+    DAMAGES = ["none", "blur", "dark", "noise", "jpeg", "occlusion", "remove patient details"]
+    _qd = str(st.query_params.get("damage", ""))
+    corr = c2.selectbox("Damage", DAMAGES, index=DAMAGES.index(_qd) if _qd in DAMAGES else 0)
     with_derm = c3.checkbox("With dermoscopy", value=False)
     sample = samples[si]
     clean = Image.open(sample["clinical_path"]).convert("RGB")
@@ -774,7 +780,8 @@ elif role == "Stress Lab":
     damaged = IMAGE_CORRUPTIONS[corr](clean) if corr in IMAGE_CORRUPTIONS else clean
     meta_bad = {} if corr == "remove patient details" else sample["metadata"]
 
-    if st.button("Run both", type="primary"):
+    auto = str(st.query_params.get("run", "")) == "1" and "stress" not in st.session_state
+    if st.button("Run both", type="primary") or auto:
         with st.spinner("Assessing (with every agent and gate)..."):
             st.session_state["stress"] = (engine.assess(clean, derm, sample["metadata"]).to_dict(),
                                           engine.assess(damaged, derm, meta_bad).to_dict(),
@@ -828,8 +835,9 @@ elif role == "Research":
         st.markdown("**Paired bootstrap tests**")
         st.dataframe(pd.DataFrame(an["paired"]).T, width="stretch")
     tr = load_json("outputs/milk_team/team_report.json")
-    t1, t2, t3, t4, t5, t6 = st.tabs(["Fusion", "Decision vs baselines", "Robustness",
-                                      "Shift: PAD-UFES-20", "External: Derm7pt", "Fairness"])
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["Fusion", "Decision vs baselines", "Robustness",
+                                              "Shift: PAD-UFES-20", "External: Derm7pt",
+                                              "Fairness", "Old models A-G", "Figures"])
     with t1:
         if tr:
             st.markdown("**Fusion methods (test)** - full comparison in *Compare systems*")
@@ -895,6 +903,56 @@ elif role == "Research":
         if an:
             st.dataframe(pd.DataFrame(an["skin_tone"]).T, width="stretch")
             st.caption("Groups under 30 lesions are too small to judge.")
+    with t7:
+        lg = load_json("outputs/legacy_pad/report.json")
+        if not lg:
+            st.info("Run scripts/legacy_pad_models.py")
+        else:
+            st.markdown("The old project's seven PAD-UFES-20 models, loaded **unchanged** and "
+                        "re-scored without the old evaluation's prediction adjustment. Its split "
+                        "was by photo, so the honest test is the photos of patients never seen "
+                        "in training.")
+            rows = {}
+            for c, m in lg["models"].items():
+                rows[f"{c} - {m['inputs']}"] = {
+                    "reported": lg["old_reported_accuracy"].get(c),
+                    "same test photos": m["old test (as reported)"]["accuracy"],
+                    "lesion unseen": m["lesion never in training"]["accuracy"],
+                    "patient unseen": m["patient never in training"]["accuracy"],
+                    "macro-F1 (patient unseen)": m["patient never in training"]["macro_f1"]}
+            ldf = pd.DataFrame(rows).T.astype(float).round(3)
+            st.dataframe(ldf, width="stretch")
+            fu = lg.get("fusion_patient_unseen", {})
+            if fu:
+                c1, c2 = st.columns(2)
+                c1.metric("A-G fused by the learned gate (unseen patients)",
+                          f"{fu['gate']['accuracy']:.1%}")
+                c2.metric("A-G simple average", f"{fu['average']['accuracy']:.1%}")
+            st.bar_chart(ldf[["reported", "same test photos", "patient unseen"]], height=280)
+            pr = ROOT / "outputs" / "legacy_pad" / "probs.npz"
+            if pr.exists():
+                P = np.load(pr, allow_pickle=True)
+                cls6 = ["BCC", "ACK", "NEV", "SEK", "SCC", "MEL"]
+                idx = P["test_idx"][P["patient_unseen"]]
+                st.markdown("**Explore one photo** (test photos of unseen patients)")
+                k = st.selectbox("Photo", list(range(len(idx))),
+                                 format_func=lambda i: f"{P['img_id'][idx[i]]} (true: {cls6[int(P['y'][idx[i]])]})")
+                i = int(idx[k])
+                a, b = st.columns([1, 2])
+                img = ROOT.parent / "HealthSphere_archive" / "data" / "raw" / "images" / str(P["img_id"][i])
+                if img.exists():
+                    a.image(str(img), width="stretch")
+                b.dataframe(pd.DataFrame({c: {"says": cls6[int(P[c][i].argmax())],
+                                              "confidence": round(float(P[c][i].max()), 3),
+                                              "correct": "yes" if P[c][i].argmax() == P["y"][i] else "no"}
+                                          for c in "ABCDEFG"}).T, width="stretch")
+    with t8:
+        figs = sorted((ROOT / "paper" / "figures").glob("fig_*.png"))
+        if not figs:
+            st.info("Run scripts/make_figures.py")
+        for f in figs:
+            st.markdown(f"**{f.stem.replace('fig_', '').replace('_', ' ')}**")
+            st.image(str(f), width="stretch")
 
 # ======================================================================
 # ARCHITECTURE

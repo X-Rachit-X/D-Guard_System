@@ -30,6 +30,7 @@ WHAT_IT_SEES = {
                                           "dataset (PAD-UFES-20) and knows only 6 of the 11 "
                                           "diagnoses",
     "similar-case vote": "the 15 most similar confirmed training lesions",
+    "embedding classifier": "a class-balanced boundary drawn through all training lesions",
 }
 
 FEATURE_TEXT = {

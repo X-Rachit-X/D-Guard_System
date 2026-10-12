@@ -24,7 +24,7 @@ Learn it word for word. Everything else in the talk supports it.
 | 1 | **Problem** | "AI gives a confident answer even when it should not — a blurry photo, missing details, sources that disagree. Softmax always picks something." | One slide: same "0.82 BCC" for a clear and a blurry photo |
 | 2 | **Idea** | "Let each source say how much it actually knows, combine them so ignorant sources fall silent, and let the system choose between three actions." | The architecture diagram (§4) |
 | 3 | **Guarantee** | "Thresholds are not hand-picked. They are calibrated with statistical tests that come with a written error bound." | One slide: PROCEED / ACQUIRE / DEFER with the gates |
-| 4 | **Evidence** | "Trained on MILK10k. It answers 9 in 10 patients, more than half confidently at 77% accuracy with 3.5% missed cancers — and that miss rate stays put whichever fusion we put under it, while a plain confidence threshold swings from 9.3% to 3.5%." | Results table (§5) |
+| 4 | **Evidence** | "Trained on MILK10k. It answers 9 in 10 patients, more than half confidently at 77% accuracy with 3.1% missed cancers — fewer than a learned rejector (4.9%) — and that miss rate stays put whichever fusion we put under it, while a plain confidence threshold swings from 3.5% to 9.3%." | Results table (§5) |
 | 5 | **Demo** | "Here is a real held-out patient." | The app (§6) |
 
 Close with **honest limits** (§7). Panels trust a project more when you state its limits
@@ -83,21 +83,23 @@ Slide 9a — what patients get (from [05_results.md](05_results.md)):
 
 | Outcome | share | accuracy | missed cancers |
 |---|---|---|---|
-| ✅ answered, HIGH confidence | 54% | **77%** (11 classes) | **3.5%** |
-| ⚠️ answered, LOW confidence (doctor confirms) | 35% | 54% — true diagnosis in top 3: **82%** | 13.0% |
-| 🧑‍⚕️ deferred (sources contradict) | 10% | — | — |
+| ✅ answered, HIGH confidence | 57% | **77%** (11 classes) | **3.1%** |
+| ⚠️ answered, LOW confidence (doctor confirms) | 32% | 50% — true diagnosis in top 3: **86%** | 21% |
+| 🧑‍⚕️ deferred (sources contradict) | 11% | — | — |
 
 Say: **"Nine in ten patients get an answer, more than half a confident one — right 77% of
-the time across 11 diagnoses."** Then the fusion slide: **"Seven ways to combine five
+the time across 11 diagnoses."** Then the fusion slide: **"Seven ways to combine six
 specialists, compared fairly; the learned Devil's Advocate wins on validation and lifts
-photo-only macro-F1 from 0.29 to 0.33."**
+photo-only macro-F1 from 0.29 to 0.38."** (figure `paper/figures/fig_fusion_rules.png`)
 
-Slide 9b — the finding (same policy, two fusions):
+Slide 9b — the finding (same policy, four fusions; figure `fig_backend_robustness.png`):
 
 | Fusion under the policy | D-GUARD missed cancers | confidence threshold, same coverage |
 |---|---|---|
-| v1 iterative EM | **3.3%** | 9.3% |
-| v2 learned gate | **3.5%** | 3.5% |
+| iterative EM, 5 specialists | **3.3%** | 9.3% |
+| learned gate, 5 specialists | **3.5%** | 3.5% |
+| iterative EM, 6 specialists | **3.0%** | 4.7% |
+| learned gate, 6 specialists (final) | **3.1%** | 3.8% |
 
 Say: **"Our policy holds its miss rate whatever it is given. A plain threshold is only as
 safe as the probabilities under it — with good probabilities it catches up, and we say so."**
@@ -206,10 +208,10 @@ exist.**
 > so the "should I ask for dermoscopy?" question can be answered with an oracle bound.
 
 **Q2. Why not just use a confidence threshold?**
-> We tested it on both of our fusions. On v1 it misses 9.3% of cancers at our coverage
-> while we miss 3.3%. On v2 it misses 3.5% — the same as us, and it is more accurate. So a
-> threshold *can* be enough, but only if the probabilities are good, and you cannot know
-> that in advance. Our policy gives the same certified miss rate either way, asks for
+> We tested it on four fusions. It missed between 3.5% and 9.3% of cancers at our
+> coverage; we missed 3.0–3.5% on all four. On the final model it misses 3.8% vs our 3.1%
+> (not significant) and is more accurate. So a threshold *can* be enough, but only if the
+> probabilities are good, and you cannot know that in advance. Our policy gives the same certified miss rate either way, asks for
 > dermoscopy or details, and answers the other 35% with a clearly marked LOW tier.
 
 **Q3. What is the difference between ignorance and conflict, and why does it matter?**
@@ -238,9 +240,9 @@ exist.**
 > to about 2%.
 
 **Q4d. Is your safety gain statistically significant?**
-> Against a threshold on the v1 fusion, yes (3.3% vs 9.3%). On the v2 fusion, no — the
-> threshold (3.5%) and a learned rejector (3.3%) are as safe as we are (p = 0.53, 0.63). We
-> report that as our main negative result. What they cannot do: certify the bound, stay
+> Against a learned rejector, yes: 3.1% vs 4.9%, p = 0.011. Against a confidence
+> threshold on the final model, no (3.8%, p = 0.18) — but the threshold's safety depends on
+> the fusion (3.5–9.3%), ours does not (3.0–3.5%). What they cannot do: certify the bound, stay
 > stable across fusions, ask for dermoscopy or details, answer the remaining patients with
 > a LOW tier, and explain each decision.
 
@@ -253,9 +255,9 @@ exist.**
 
 **Q4f. Why is the confidence often low?**
 > Eleven diagnoses with look-alikes and rare classes; evidential heads built to say "I don't
-> know"; and the number we show is *calibrated* — 74% shown on average vs 72% actually
-> right. A raw softmax would look higher and be wrong more often than it claims. The honest
-> way up is a dermatology backbone and more data, not a different number.
+> know"; and the number we show is *calibrated* — with dermoscopy, 76% shown on average
+> vs 73% actually right. A raw softmax would look higher and be wrong more often than it
+> claims. The honest way up is a dermatology backbone and more data, not a different number.
 
 **Q4g. The old system had Models A–G. Why only A?**
 > B–G need PAD-UFES's clinical fields (smoking, pesticide, itch, bleeding…) or free text
@@ -263,13 +265,15 @@ exist.**
 > and it is in the team as specialist S4.
 
 **Q4h. The old system reported 85–90%. Why are your numbers lower?**
-> Different, harder task (11 classes, lesion-level split). And the old split was by photo:
-> 43% of its test photos showed a lesion already in training. Its live demo also looked up
-> the true label for PAD-UFES files. We documented this in what_did_not_work §40.
+> Different, harder task (11 classes, lesion-level split). And the old numbers were not
+> real: its split was by photo (43% of test photos showed a lesion already in training),
+> and its evaluation code flipped predictions until each model hit a hard-coded target
+> accuracy. We re-scored its saved models honestly: 57–75% on unseen patients. Fusing all
+> seven with our learned gate gives 73% vs 60% for averaging (Research view).
 
 **Q5. How often does it refuse to answer?**
 > About 1 in 10 — only when the photo and the details contradict each other. Everyone
-> else gets an answer: 54% HIGH confidence, 35% LOW confidence with a doctor confirming.
+> else gets an answer: 57% HIGH confidence, 32% LOW confidence with a doctor confirming.
 > Even deferred patients see the tentative opinion and an urgency flag. The share of HIGH
 > answers is set by the image model's quality; a stronger encoder raises it.
 

@@ -209,6 +209,26 @@ def reply(cid: int, r: ReplyIn):
     return {"message_id": service().reply(cid, r.doctor, r.text)}
 
 
+@app.delete("/cases/{cid}/messages")
+def clear_messages(cid: int):
+    _case(cid)
+    service().clear_messages(cid, actor="api")
+    return {"cleared": cid}
+
+
+@app.delete("/cases/{cid}")
+def delete_case(cid: int):
+    _case(cid)
+    return {"deleted_case": cid, "files_removed": service().delete_case(cid, actor="api")}
+
+
+@app.delete("/patients/{pid}")
+def delete_patient(pid: int):
+    if service().store.patient(pid) is None:
+        raise HTTPException(404, f"no patient {pid}")
+    return {"deleted_patient": pid, "files_removed": service().delete_patient(pid, actor="api")}
+
+
 @app.get("/stats")
 def stats():
     return service().store.stats()

@@ -36,7 +36,7 @@ the questions examiners (and we) kept asking. Simple English; numbers link to
 | App | every view rendered headless (Streamlit AppTest) with no exception; "run every system" executes | see commit log |
 | **No test-set peeking** | every choice — fusion weights, which fusion rule wins, thresholds, calibration — is made on the 786 validation lesions; the 787 test lesions are scored once | `scripts/run_team.py`, `scripts/run_eade_milk.py` |
 
-`pytest tests -q` → **229 tests, ~12 s.**
+`pytest tests -q` → **230 tests, ~12 s.**
 
 One honest correction happened during this work: the v1 fusion had been fitted on the same
 validation lesions that later calibrated the safety guarantees (in-sample). With
@@ -49,14 +49,15 @@ moved from 60.2% to 57.2% for v1. The new numbers are the ones reported.
 
 | # | Claim | Evidence | Status |
 |---|---|---|---|
-| 1 | 9 in 10 patients get an answer, with an explicit HIGH / LOW tier | 89.5% answered; HIGH 54.4% at 76.9% accuracy | ✅ measured |
-| 2 | The missed-cancer rate among HIGH answers stays at **3.3–3.5% with either fusion back-end** (v1 EM, v2 learned gate) | 05_results §5 | ✅ robust |
-| 3 | A plain confidence threshold is **only as safe as the probabilities under it** — 9.3% missed with v1, 3.5% with v2 | 05_results §5 | ✅ a finding, stated both ways |
-| 4 | The missed-cancer rate is **certified** by Learn-then-Test (α = 5%, δ = 10%) at both stages | λ̂ 0.212 / 0.365, p ≈ 0.08–0.10 | ✅ under exchangeability |
-| 5 | The learned Devil's Advocate (v2) is the best fusion rule on validation, and the best at stage A on test | 05_results §3 | ✅ stage A; ❌ stage B test (v1 better) |
-| 6 | The system notices damaged evidence | DERMA-STRESS: blur/dark/occlusion/noise flagged, missing details requested | ✅ (see §7 for what is left) |
-| 7 | It stays safe under distribution shift | PAD-UFES-20: 0.0% missed (HIGH 14%); Derm7pt: 3.8% missed (HIGH 11%), dermoscopy asked for 55% and accuracy 0.30 → 0.43 | ✅ safety / ❌ fine diagnosis |
-| 8 | A learned rejector is as safe as our HIGH tier | p = 0.63, not different | ✅ reported against us |
+| 1 | 9 in 10 patients get an answer, with an explicit HIGH / LOW tier | 89.1% answered; HIGH 57.1% at 77.1% accuracy | ✅ measured |
+| 2 | The missed-cancer rate among HIGH answers stays at **3.0–3.5% across four fusion back-ends** | 05_results §5 | ✅ robust |
+| 3 | A plain confidence threshold is **only as safe as the probabilities under it** — 3.5% to 9.3% on the same four back-ends | 05_results §5 | ✅ the key finding |
+| 4 | The missed-cancer rate is **certified** by Learn-then-Test (α = 5%, δ = 10%) at both stages | λ̂ 0.218 / 0.276 | ✅ under exchangeability |
+| 5 | The learned Devil's Advocate (v2) is the best fusion rule on validation | 05_results §3; on test it has the best accuracy and AUROC with dermoscopy, but not the best macro-F1 | ✅ / ⚠️ |
+| 6 | The system notices damaged evidence | DERMA-STRESS: blur/dark/occlusion/noise flagged, missing details requested; 0 HIGH answers on damaged input | ✅ |
+| 7 | It stays safe under distribution shift | PAD-UFES-20: 0.0% missed (HIGH 11%); Derm7pt: 3.8% missed (HIGH 13%), dermoscopy asked for 39%, accuracy 0.40 → 0.48 | ✅ safety / ❌ fine diagnosis |
+| 8 | Safer than a learned rejector at the same coverage | 3.1% vs 4.9%, p = 0.011 | ✅ |
+| 8b | Safer than a confidence threshold on the final model | 3.1% vs 3.8%, p = 0.18 | ❌ not significant — reported |
 | 9 | Faster/cheaper than always answering | no — always answering has lower mean cost | ❌ reported against us |
 | 10 | The scribe's warning signs justify raising urgency | PAD-UFES-20 questionnaire: any sign → cancer 48.7% vs 12.4% (RR 3.9) | ✅ on another dataset |
 
@@ -78,7 +79,12 @@ OOD by Mahalanobis distance, the scribe, the librarian, and the original **Model
 1. **The split was by photo, not by lesion or patient.** PAD-UFES-20 has 2,298 photos of
    1,641 lesions from 1,373 patients, split at random by photo. Re-running that split:
    **43% of test photos show a lesion that was also in training, 62% a patient who was.**
-   This is why the old Models A–G scored 85–90%; those numbers are not comparable.
+   Worse, the evaluation function in `train_all.py` held a table of **target accuracies**
+   per model and swapped probabilities between the true class and its rival until the
+   number of correct predictions matched the target. The reported 84–90% were set, not
+   measured. `scripts/legacy_pad_models.py` re-scores the saved models without any
+   adjustment: **57–75% on unseen patients**; the text model is near chance (27%), and
+   the three-modality model (58%) is worse than metadata alone (75%).
 2. **The live "vision panel" looked up the true label.** In `agents/vision_team.py`, when the
    uploaded file name was a PAD-UFES image, Model A's output was replaced by 0.925 on the
    *true* class; the "DermLIP", "PanDerm" and "Swin" panel members were small arithmetic
@@ -92,7 +98,10 @@ OOD by Mahalanobis distance, the scribe, the librarian, and the original **Model
 B (metadata) needs PAD-UFES's 116 clinical fields (smoking, pesticides, itch, bleeding…),
 C/E/F/G need free text that was **generated from those same fields**, and D needs both.
 MILK10k has none of these fields. Model A (image only) is the one that transfers, so it is
-in the team. On PAD-UFES itself they cannot be tested fairly either (they were trained on it).
+in the MILK10k team. **On PAD-UFES we do use all seven**: re-scored honestly (above), and
+fused by D-GUARD's learned gate on the 132 test photos of unseen patients (5-fold CV) —
+**72.7%** vs 59.8% for averaging them, close to the best single model (75%) without being
+told which one it is. Results in the app's Research view and `05_results.md` §7c.
 
 ---
 
@@ -100,11 +109,11 @@ in the team. On PAD-UFES itself they cannot be tested fairly either (they were t
 
 **Why is the confidence often low?** Four honest reasons:
 1. **Eleven diagnoses, several look-alikes** (BCC / AKIEC / SCCKA; BKL / MEL) and several
-   rare classes (5–7 test lesions). 72% accuracy is the measured level with dermoscopy.
+   rare classes (5–9 test lesions). 73% accuracy is the measured level with dermoscopy.
 2. **Evidential heads are built to say "I don't know"**: average ignorance is 0.68 without
    dermoscopy, so each head alone spreads its belief (the photo head is often 10–40% sure).
 3. **The shown confidence is calibrated**: "of past validation cases with this confidence,
-   this share were right". On test it shows 0.74 on average vs 0.72 actual — honest, not
+   this share were right". On test it shows 0.76 on average vs 0.73 actual — honest, not
    flattering. A raw softmax would *look* higher and be wrong more often than it says.
 4. **The backbone is an ImageNet ResNet50**, the weakest part. The way to raise confidence
    honestly is a dermatology backbone (DermLIP/PanDerm — the Kaggle script supports it),
@@ -112,12 +121,13 @@ in the team. On PAD-UFES itself they cannot be tested fairly either (they were t
 
 **Does the system ask for more data when it needs it?** Yes, in three ways:
 (a) **dermoscopy** — when the expected cost of answering now is higher than asking
-(26% of test patients); (b) **patient details** — a photo with no age/sex/site is not
-answered until the details are sent (new; DERMA-STRESS showed v2 missed 17.6% of cancers
-in that situation without the request); (c) **a better photo** — a severe quality problem
-blocks a confident answer and the app offers a retake. Under v1 the dermoscopy requests
-went to the right patients (acquisition efficiency +0.30 vs −0.04 for "ask the most
-uncertain"); under v2 the two are equal (+0.20) — reported.
+(30% of test patients); (b) **patient details** — a photo with no age/sex/site is not
+answered until the details are sent (DERMA-STRESS showed the five-specialist gate missed
+17.6% of cancers in that situation without the request); (c) **a better photo** — a
+severe quality problem blocks a confident answer and the app offers a retake. Whom to ask
+for dermoscopy: on the iterative EM fusion the learned estimator beat "ask the most
+uncertain" (acquisition efficiency +0.30 vs −0.04); on the final gate the simple rule is
+better (+0.26 vs +0.07) — reported.
 
 **How are specialists combined, and how do we pick the best?** Seven rules
 (`src/fusion/methods.py`) are fitted with 5-fold cross-fitting on validation; the rule with
@@ -127,9 +137,9 @@ is visible in *Compare systems*.
 
 **How much weight does each kind of evidence get, and why do modalities disagree?** Per
 case: the *Why this result* panel (Part 4 of [11_ui_guide.md](11_ui_guide.md)). On average
-(test, v2): similar-case vote ~0.77, photo ~0.09, dermoscopy ~0.11, Model A ~0.03. The
-gate listens most to the specialist's track record for the suspected diagnosis, how
-unusual the case is (OOD), quality and learned reliability.
+(test, final team with dermoscopy): details head 0.35, embedding classifier 0.21,
+dermoscopy 0.18, photo 0.11, similar-case vote 0.08, Model A 0.07. The gate listens most to
+confidence, margin, agreement, consistency and how unusual the case is (OOD).
 
 **Was MILK10k the right choice?** Yes. It is the only public dataset where *every* lesion
 has a clinical photo **and** a dermoscopy image (5,240 lesions, 11 diagnoses, skin tone),
@@ -156,5 +166,9 @@ python scripts/analyze_milk.py
 python scripts/run_stress_milk.py --out outputs/stress_milk/report_team.json
 python scripts/run_shift_pad.py
 python scripts/run_shift_derm7pt.py --data dataset/release_v0
+python scripts/legacy_pad_models.py          # the old project's A-G, re-scored
+python scripts/analyze_pad_symptoms.py       # scribe warning signs on PAD-UFES-20
+python scripts/make_figures.py               # every figure
+python scripts/build_report.py               # the project report in the VIT template
 python scripts/run_seeds.py runs/milk10k_resnet50_seed7 runs/milk10k_resnet50_seed2026
 ```

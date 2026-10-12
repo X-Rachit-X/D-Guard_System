@@ -141,11 +141,11 @@ standard. About 6% of ordinary photos trip the severe level and lose their HIGH 
 
 ## 5. Added after the v2 analysis
 
-- **The safety advantage over simple abstention is not robust.** With the learned-gate
-  fusion, a confidence threshold and a learned rejector are as safe as the HIGH tier
-  ([05_results.md](05_results.md) §5). What remains specific to D-GUARD: the certified
-  bound, stability across fusion back-ends, evidence acquisition, LOW-tier answers and
-  explanations.
+- **The safety advantage over a confidence threshold is small on the final model**
+  (3.1% vs 3.8%, not significant). D-GUARD is significantly safer than a learned rejector
+  (p = 0.011) and, unlike the threshold, stable across fusion back-ends (3.0–3.5% vs
+  3.5–9.3%) ([05_results.md](05_results.md) §5).
+- **Skin tone 2 has 11.5% missed cancers** among HIGH answers (67 lesions) vs 2.2% for tone 3.
 - **The learned gate depends on patient details** (17.6% missed without them, before the
   request was added). Any deployment must keep the missing-details request.
 - **Image checks are heuristics** fitted on 300 training photos (1st/99th percentiles);
