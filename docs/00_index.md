@@ -20,6 +20,7 @@ Dermatology AI. Final version, 2026-10-11. Dataset: **MILK10k**.
 | 09 | [09_todo.md](09_todo.md) | what is left — nothing required |
 | 10 | [10_project_structure.md](10_project_structure.md) | folders, what was moved out |
 | 11 | [11_ui_guide.md](11_ui_guide.md) | **the app, view by view** — what every button does |
+| 14 | [14_base_papers_and_contributions.md](14_base_papers_and_contributions.md) | **base papers → what we did → what we achieved → what we publish; all findings** |
 | 13 | [13_simple_guide.md](13_simple_guide.md) | **the whole project in plain words, 15 minutes — start here** |
 | 12 | [12_how_it_was_built.md](12_how_it_was_built.md) | **how it was built and checked**; every claim → its evidence; FAQ (why is confidence low? why MILK10k? models B–G?) |
 

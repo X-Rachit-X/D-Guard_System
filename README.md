@@ -53,7 +53,7 @@ External tests: **PAD-UFES-20** (phone photos) and **Derm7pt** (photo + dermosco
 
 Full results: **[docs/05_results.md](docs/05_results.md)** · how it was built and checked:
 **[docs/12_how_it_was_built.md](docs/12_how_it_was_built.md)** · paper:
-**[paper/main.tex](paper/main.tex)**.
+**[paper/main.tex](paper/main.tex)** ([compiled PDF](paper/main.pdf)).
 
 ---
 
@@ -93,6 +93,7 @@ uvicorn src.api:app --port 8000          # REST API, docs at /docs
 pytest tests -q                          # 230 tests, ~12 s
 python scripts/make_figures.py           # every figure, from saved results
 python scripts/build_report.py           # the project report (.docx + .pdf) in the VIT template
+python scripts/build_slides.py           # the 16-slide presentation (.pptx)
 ```
 
 Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted artifacts in
@@ -105,7 +106,7 @@ Needs `./milk10k`, the trained weights in `runs/*/checkpoints/` and the fitted a
 | | |
 |---|---|
 | Start | [docs/00_index.md](docs/00_index.md) · [01_overview.md](docs/01_overview.md) |
-| Learn | **[13_simple_guide.md](docs/13_simple_guide.md)** (start here) · [02_learning_path.md](docs/02_learning_path.md) · [08_study_plan.md](docs/08_study_plan.md) · [12_how_it_was_built.md](docs/12_how_it_was_built.md) |
+| Learn | **[13_simple_guide.md](docs/13_simple_guide.md)** (start here) · **[14_base_papers_and_contributions.md](docs/14_base_papers_and_contributions.md)** · [02_learning_path.md](docs/02_learning_path.md) · [08_study_plan.md](docs/08_study_plan.md) · [12_how_it_was_built.md](docs/12_how_it_was_built.md) |
 | System | [03_system.md](docs/03_system.md) · [04_methods.md](docs/04_methods.md) · [10_project_structure.md](docs/10_project_structure.md) · [11_ui_guide.md](docs/11_ui_guide.md) |
 | Results | [05_results.md](docs/05_results.md) · [what_did_not_work.md](docs/what_did_not_work.md) · [limitations.md](docs/limitations.md) |
 | Present | [07_panel_guide.md](docs/07_panel_guide.md) · [paper/main.tex](paper/main.tex) |

@@ -28,6 +28,8 @@ Table: MILK10k classes and their distribution across the lesion-level split.
 | VASC | Vascular lesion | no | 34 | 5 | 8 | 47 |
 | **Total** | | | **3,667** | **786** | **787** | **5,240** |
 
+![Class distribution of MILK10k across the training, validation and test splits. Basal cell carcinoma dominates; four classes have fewer than 60 lesions in total.](paper/figures/fig_class_distribution.png)
+
 Two properties of this table shape everything that follows. The data are **heavily imbalanced**: basal cell carcinoma alone is almost half the dataset, while four classes have fewer than ten test lesions, so accuracy can look good while rare diagnoses are never predicted; this is why macro-F1 and balanced accuracy are reported throughout. And the skin-tone distribution is narrow: in the test set, 489 of 787 lesions are tone 3, and only 14 are tone 1, which limits what can be said about fairness.
 
 ## Splitting Without Leakage

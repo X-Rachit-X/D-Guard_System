@@ -81,7 +81,11 @@ Table: Database tables of the care platform.
 | followups | Scheduled re-checks | due date, reason, status |
 | audit | Append-only event log | actor, event, detail |
 
+![Database schema of the care platform. Every table except patients hangs off a case; the audit log records every event.](paper/figures/fig_db_schema.png)
+
 A case moves through a small state machine: OPEN when created; AWAITING_PATIENT when the system asks for evidence; AWAITING_DOCTOR after a deferral, a LOW answer or a worrying change; ASSESSED after a HIGH answer; FOLLOW_UP when a doctor schedules a re-check; and CLOSED after a final review. The doctor's queue orders cases by kind (review before confirm before sign-off), then urgency, then waiting time.
+
+![The life cycle of a case in the care platform. Every transition is triggered by an outcome of the decision policy or by a doctor, and is recorded in the audit log.](paper/figures/fig_case_states.png)
 
 Personal data can be erased. Deleting a case or a patient removes every related record and the photographs uploaded through the platform (never the dataset images used by the demonstration); the audit log keeps only the fact that a deletion took place.
 

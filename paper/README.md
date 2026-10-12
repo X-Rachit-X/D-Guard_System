@@ -1,6 +1,6 @@
 # Paper
 
-IEEE conference paper (`IEEEtran`), about 8 pages with 7 figures and 4 tables.
+IEEE conference paper (`IEEEtran`), 10 pages with 15 figures and 4 tables. A compiled copy is in `main.pdf` (built with Tectonic; Overleaf's fonts may shift the length slightly).
 
 ## Compile on Overleaf
 

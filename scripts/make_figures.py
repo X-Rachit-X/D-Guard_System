@@ -242,7 +242,11 @@ def fig_legacy():
     ax.bar(x - 0.27, np.array(rep) * 100, 0.27, color="#d9d9d9", label="reported by the old system")
     ax.bar(x, np.array(old) * 100, 0.27, color=C_GREY, label="same weights, same test photos")
     ax.bar(x + 0.27, np.array(unseen) * 100, 0.27, color=C_DG, label="photos of unseen patients")
-    ax.set_xticks(x, [f"{c}\n{r['models'][c]['inputs']}" for c in codes], fontsize=6.5)
+    short = {"image": "img", "metadata": "meta", "free text": "text", "text": "text"}
+    labels = ["{}\n{}".format(c, "+".join(short.get(w.strip(), w.strip())
+                                          for w in r["models"][c]["inputs"].split("+")))
+              for c in codes]
+    ax.set_xticks(x, labels, fontsize=7)
     ax.set_ylabel("accuracy, PAD-UFES-20 (%)")
     fu = r.get("fusion_patient_unseen", {})
     if "gate" in fu:

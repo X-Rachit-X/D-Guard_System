@@ -23,6 +23,8 @@ Table: Training configuration of the evidential network (Kaggle GPU).
 
 Modality dropout matters for this project: because a modality is sometimes hidden during training, the network learns to give an honest "I don't know" for an absent input, which is what makes stage A (no dermoscopy) and stage B (with dermoscopy) consistent.
 
+![Training of the evidential network on Kaggle (seed 42): training loss and validation macro-F1 and accuracy per epoch. The backbone is unfrozen after epoch 3; the checkpoint with the best validation macro-F1 (epoch 23) is kept.](paper/figures/fig_training_curves.png)
+
 ### S4: the legacy model
 
 The image model of our earlier prototype (a ResNet50 feature extractor followed by channel attention and a two-layer self-attention encoder) was trained on PAD-UFES-20 smartphone photographs. It is applied unchanged to MILK10k clinical photographs. Its six classes are mapped onto six of the eleven MILK10k classes, and the distribution is mixed with 10% uniform probability so that the five classes it cannot name are "unknown" rather than "impossible".
@@ -53,6 +55,8 @@ Table: Evidence signals computed by the Devil's Advocate.
 | OOD distance | Is this case unusual? | Mahalanobis distance to nearest class mean, divided by the validation 99th percentile |
 
 The original prototype multiplied hand-set versions of these signals into a score E_m = Q R U C S M and normalised the scores into weights. Two problems are visible in that formula. Its numbers were typed in by hand, and consistency C and sufficiency S are the same for every specialist of a case, so they cancel when the weights are normalised; in practice only Q, R and the utility prior ever changed the weights. Version 2 lets every signal act and learns how.
+
+![The measured trust table: on validation lesions of each true diagnosis, how often each specialist alone names it correctly. This is the diagnosis-adaptive prior that the original design typed in by hand; dermoscopy is reliable for SCCKA and VASC, the photograph for melanoma, and the old Model A for almost nothing outside BCC and AKIEC.](paper/figures/fig_trust_table.png)
 
 ## Fusion Rules
 
@@ -90,6 +94,8 @@ Table: The seven combination rules compared.
 
 All seven rules are fitted the same way. The 786 validation lesions are split into five folds; each rule, together with the reliability models and track-record table it depends on, is fitted on four folds and applied to the fifth. The resulting **out-of-fold** probabilities serve two purposes. They are used to **select** the rule (best out-of-fold macro-F1, decided before any test result was seen), and they are the probabilities on which the decision policy is later **calibrated**, so the conformal sets and the Learn-then-Test threshold never see probabilities from a model fitted on the same lesions. The test set receives probabilities from rules fitted on the whole validation set.
 
+![Cross-fitting: each fusion rule is fitted on four fifths of the validation set and predicts the remaining fifth, five times. The out-of-fold predictions choose the rule and calibrate the safety guarantees; the test set is scored once.](paper/figures/fig_cross_fitting.png)
+
 Two further analyses help to understand the team. The **subset study** refits the selected rule on every non-empty subset of specialists (31 for stage A, 63 for stage B) to see whether any specialist is dead weight. The **oracle** picks, for each test case, the specialist that gave the true diagnosis the most probability; it uses the label and is therefore not a usable method, but it shows how much better per-case selection could still become.
 
 ## Ignorance, Conflict and Calibrated Confidence
@@ -123,6 +129,8 @@ The stated diagnosis is the most probable class. Using the minimum-cost label in
 2. If no gate fires and answering is cheapest, the outcome is a **HIGH** answer.
 3. Otherwise, if dermoscopy is still available and its expected cost r_acquire = r_answer - h-hat + 0.5 is lower than the cost of a review, the outcome is **ACQUIRE**. Here h-hat is the predicted reduction in cost from seeing the dermoscopic image, estimated by a gradient-boosted regressor fitted on validation lesions, for which the real dermoscopy is known.
 4. Otherwise the outcome is a **LOW** answer: the diagnosis is stated, marked unreliable, and the case is queued for a doctor to confirm.
+
+![How the decision policy chooses an outcome. Requests for evidence loop back: once the patient provides the dermoscopic image or the details, the whole assessment runs again.](paper/figures/fig_decision_flow.png)
 
 This "minimal deferral" design means that the system defers only on contradiction. An earlier design deferred on any failed check, so every patient without a HIGH answer went to a doctor with no answer at all; the LOW tier keeps those patients informed while still requiring confirmation. The HIGH tier is identical to a conventional defer-on-any-gate policy, so every guarantee and every comparison with baselines concerns exactly the same set of answers.
 

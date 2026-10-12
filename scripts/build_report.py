@@ -124,8 +124,7 @@ class Builder:
         self.n_app = 0
 
     def chapter(self, title, numbered=True):
-        if self.toc:                     # chapter 1 gets a section break from Word instead
-            page_break(self.doc)
+        new_page = bool(self.toc)        # chapter 1 gets a section break from Word instead
         if numbered:
             self.ch += 1
             self.sec = self.sub = self.nfig = self.ntab = 0
@@ -141,6 +140,9 @@ class Builder:
         set_run(p.add_run(label), 16, True)
         fmt(p, WD_ALIGN_PARAGRAPH.CENTER, 1.5, 0, 18)
         keep_with_next(p)
+        # "page break before" on the heading itself never produces a blank page,
+        # unlike a separate page-break paragraph that can land at the top of a new page
+        p.paragraph_format.page_break_before = new_page
         self.toc.append((1, str(self.ch) if numbered else "", title, label))
 
     def section(self, title):
@@ -366,6 +368,8 @@ def main() -> int:
     ap.add_argument("--source", default="reports/source")
     ap.add_argument("--out", default="reports/DERMA-GUARD_Project_Report.docx")
     ap.add_argument("--meta", default="reports/source/meta.json")
+    ap.add_argument("--merit-page", action="store_true",
+                    help="keep the template's industry certificate-of-merit page (internships)")
     args = ap.parse_args()
     import json
     meta = json.loads((ROOT / args.meta).read_text(encoding="utf-8"))
@@ -384,6 +388,14 @@ def main() -> int:
         node = nxt
 
     # ---------------------------------------------------------------- front matter
+    if not args.merit_page:   # a project report has no industry certificate of merit
+        for k, par in enumerate(doc.paragraphs):
+            if par.text.startswith("INSERT THE CERTIFICATE OF MERIT"):
+                nxt = doc.paragraphs[k + 1]
+                par._element.getparent().remove(par._element)
+                if not nxt.text.strip() and nxt._element.find(".//" + qn("w:br")) is not None:
+                    nxt._element.getparent().remove(nxt._element)
+                break
     for t in doc.element.body.iter(qn("w:t")):
         if t.text and "<Title of Industry Internship>" in t.text:
             t.text = t.text.replace("<Title of Industry Internship>", "DERMA-GUARD")
@@ -455,7 +467,8 @@ def main() -> int:
     # ---------------------------------------------------------------- lists
     T = doc.tables
     contents = [["", "Title Page", "i"], ["", "Declaration", "ii"], ["", "Certificate", "iii"],
-                ["", "Industry / Merit Certificate", "iv"], ["", "Acknowledgement", "v"],
+                *([["", "Industry / Merit Certificate", "iv"]] if args.merit_page else []),
+                ["", "Acknowledgement", "v"],
                 ["", "Table of Contents", "vi"], ["", "List of Tables", "vii"],
                 ["", "List of Figures", "viii"], ["", "List of Abbreviations", "ix"],
                 ["", "Abstract", "x"]]
@@ -480,7 +493,8 @@ def main() -> int:
         import win32com.client as win32
         word = win32.gencache.EnsureDispatch("Word.Application")
         word.Visible = False
-        d = word.Documents.Open(str(out))
+        word.DisplayAlerts = 0
+        d = word.Documents.Open(str(out), False, False, False)   # ConfirmConversions, ReadOnly, AddToRecent
 
         # 1. Chapter 1 starts a new section: front matter in roman numerals, body from 1
         rng = d.Content
@@ -525,8 +539,8 @@ def main() -> int:
             cell.Range.Font.Name = "Times New Roman"
 
         tbl = d.Tables(1)
-        front = ["", "DECLARATION", "CERTIFICATE", "INSERT THE CERTIFICATE", "ACKNOWLEDGEMENT",
-                 "CONTENTS", "LIST OF TABLES", "LIST OF FIGURES", "LIST OF ABBREVIATIONS", "ABSTRACT"]
+        front = ["", "DECLARATION", "CERTIFICATE"] + (["INSERT THE CERTIFICATE"] if args.merit_page else []) +                 ["ACKNOWLEDGEMENT", "CONTENTS", "LIST OF TABLES", "LIST OF FIGURES",
+                 "LIST OF ABBREVIATIONS", "ABSTRACT"]
         for k, head in enumerate(front):
             pg = 1 if k == 0 else page_of(head, frm=0)
             if pg != "":
@@ -560,11 +574,21 @@ def main() -> int:
                         pass
         d.Repaginate()
         pages = d.ComputeStatistics(2)          # wdStatisticPages
-        d.Save()
-        d.ExportAsFixedFormat(str(out.with_suffix(".pdf")), 17)   # wdExportFormatPDF
+        import os
+        pdf = out.with_suffix(".pdf")
+        try:                                    # the PDF may be open in a viewer
+            if pdf.exists():
+                open(pdf, "r+b").close()
+        except PermissionError:
+            pdf = out.with_name(out.stem + "_updated.pdf")
+            print(f"  {out.with_suffix('.pdf').name} is open elsewhere - writing {pdf.name}")
+        tmp = out.with_name(out.stem + "_tmp.docx")
+        d.SaveAs2(str(tmp), 16)                 # wdFormatDocumentDefault
+        d.ExportAsFixedFormat(str(pdf), 17)     # wdExportFormatPDF
         d.Close()
+        os.replace(tmp, out)
         word.Quit()
-        print(f"page numbers filled; total pages: {pages}; PDF -> {out.with_suffix('.pdf')}")
+        print(f"page numbers filled; total pages: {pages}; PDF -> {pdf}")
     except Exception as e:
         print(f"(page numbers not filled - Word automation unavailable: {e})")
         try:

@@ -18,6 +18,8 @@ When the network sees strong evidence, S is large, the beliefs are large and u i
 
 $$ p_k = b_k + u / K
 
+![Evidence in practice: belief per class (blue) and ignorance u (red) of the photograph head for two real test lesions, the one with the most evidence and the one with the least. The bars always sum to one; when the head has little evidence, u is large instead of a random class looking likely.](paper/figures/fig_evidential_example.png)
+
 The network is trained with the evidential loss of Sensoy et al. [28], an expected cross-entropy under the Dirichlet plus a regulariser that removes evidence for wrong classes. The regulariser is introduced gradually ("annealed") over the first ten epochs.
 
 ## Combining Opinions: Dempster's Rule

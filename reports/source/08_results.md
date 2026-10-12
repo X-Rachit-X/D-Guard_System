@@ -68,6 +68,8 @@ The weights show what the gate learned. Without dermoscopy, the details head rec
 
 The confusion matrix shows where the errors are: actinic keratoses are confused with BCC and SCC, benign keratoses with BCC and nevi, and the four rare classes (BEN_OTH, INF, MAL_OTH and VASC with 1 to 8 test lesions) are almost never predicted.
 
+![Per-class F1 on the test set: the evidential network alone against the full D-GUARD team. The team gains most on BKL (+0.35), BEN_OTH (+0.29), AKIEC (+0.23) and INF (+0.18), the classes the evidential network handled worst. It loses on VASC (0.88 to 0.36, 8 test lesions), where the dermoscopy head alone was best, and MAL_OTH is never predicted.](paper/figures/fig_per_class_f1.png)
+
 ## The Decision Policy
 
 Table: What patients receive (test set, missed-cancer cost 5).
@@ -156,6 +158,8 @@ Table: Results by MILK10k skin-tone class (test set).
 | 3 | 489 | 64% | 77% | 2.2% |
 | 4 | 167 | 53% | 76% | 4.5% |
 | 5 | 50 | 42% | 76% | 0% |
+
+![Share of HIGH answers and missed cancers among them, by MILK10k skin-tone class (test set).](paper/figures/fig_skin_tone.png)
 
 Fairness is a real weakness. Patients with skin tone 2 receive fewer confident answers, and among those answers 11.5% of cancers are missed, against 2.2% for tone 3. Tone 3 dominates MILK10k (62% of test lesions), and the calibration is fitted on the whole validation set, so its guarantee is an average that does not protect small groups. Class-conditional (Mondrian) calibration by skin tone is the obvious remedy, but with 14 to 67 lesions per light-tone group there is not enough data to fit it; we report the gap rather than hide it.
 

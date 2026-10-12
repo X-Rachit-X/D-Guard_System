@@ -174,7 +174,10 @@ concept scores. Without patient identifiers, we split by lesion into 3{,}667 tra
 786 validation and 787 test lesions, asserting that no lesion appears twice. Validation
 fits everything that is fitted after the network: fusion rules, reliabilities,
 calibration, conformal quantiles, the risk threshold, the acquisition estimator and every
-choice between methods. The test split was scored once.
+choice between methods. The test split was scored once. The data are heavily
+imbalanced: basal cell carcinoma makes up 48\% of lesions, while four classes have fewer
+than ten test lesions each, which is why we report macro-F1 and balanced accuracy next to
+accuracy throughout.
 
 \textbf{External data.} PAD-UFES-20 \cite{pacheco2020padufes} (2{,}298 smartphone
 photographs, six classes, no dermoscopy) and Derm7pt \cite{kawahara2019derm7pt} (1{,}003
@@ -248,6 +251,15 @@ $E_m=Q_mR_mU_mCSM_m$, and normalised them into weights; because consistency $C$ 
 sufficiency $S$ are equal for all specialists of a case, they cancelled, and only three
 signals ever moved the weights.
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\columnwidth]{fig_trust_table}
+\caption{The measured trust table $\pi_m(c)$: on validation lesions of each true class,
+how often each specialist alone names it. The prototype typed this table in by hand; for
+melanoma it assumed 0.96 for the photograph, where 0.52 is measured.}
+\label{fig:trust}
+\end{figure}
+
 \subsection{Fusion rules and how one is chosen}\label{sec:fusion}
 
 \textbf{Iterative diagnosis-adaptive fusion (v1)} keeps the prototype's EM-style loop
@@ -273,7 +285,17 @@ of validation and applied to the remaining fifth, five times. The out-of-fold
 probabilities are used both to select the rule (best macro-F1, fixed before any test
 result was seen) and to calibrate the policy. We also refit the selected rule on all 31
 (stage A) and 63 (stage B) specialist subsets, and report an oracle that picks, per case,
-the specialist giving the true class most mass.
+the specialist giving the true class most mass. Fig.~\ref{fig:xfit} summarises the
+protocol.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_cross_fitting}
+\caption{Cross-fitting. Every fusion rule is fitted on four validation folds and predicts
+the fifth; the out-of-fold predictions both choose the rule and calibrate the safety
+guarantees, so neither step judges a model on its own training data.}
+\label{fig:xfit}
+\end{figure}
 
 \subsection{The decision policy}
 
@@ -294,7 +316,18 @@ expected cost after acquisition, estimated by a gradient-boosted regressor fitte
 validation lesions whose dermoscopy is known, plus $0.5$, is below the cost of review;
 else it gives a \LOW\ answer for a clinician to confirm. Only contradiction or absent
 evidence leads to \DEFER, so the \HIGH\ tier coincides with a conventional
-defer-on-any-gate policy and all baseline comparisons concern the same answers.
+defer-on-any-gate policy and all baseline comparisons concern the same answers
+(Fig.~\ref{fig:flow}). An earlier version deferred on every failed check, which sent every
+patient without a confident answer to a clinician with nothing at all; the \LOW\ tier keeps
+those patients informed while still requiring confirmation.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_decision_flow}
+\caption{How the policy chooses an outcome. Requests for evidence loop back: once the
+dermoscopic image or the missing details arrive, the case is assessed again.}
+\label{fig:flow}
+\end{figure}
 
 \subsection{Agents and platform}
 
@@ -304,9 +337,25 @@ the diagnosis), a librarian shows similar confirmed \emph{training} lesions
 \cite{lewis2020rag}, an explainer states who said what, why dissenting specialists
 disagree and where the weight went, and a report writer may use a local language model
 whose output is discarded if a verifier finds any diagnosis or percentage not in the
-evidence. A care platform routes each outcome to the patient or a clinician queue, keeps
-an audit log and lets patients delete their data. Its interface runs any lesion through
-every specialist, fusion rule and baseline side by side.
+evidence. A care platform built on SQLite routes each outcome: a confident answer schedules a
+follow-up, a request moves the case to ``awaiting patient'' until the evidence arrives,
+and \LOW\ answers and deferrals enter a clinician queue ordered by kind and urgency. A
+follow-up photograph whose probability of malignancy rises by 0.15 or more returns the
+case as urgent. Every assessment stores the policy version that produced it, every event
+goes to an append-only audit log, and patients can delete a case or their whole record,
+including uploaded photographs. A Streamlit application exposes patient, clinician,
+stress-testing and research views, and a ``compare systems'' view runs any held-out lesion
+through every specialist, every fusion rule and every baseline side by side; a FastAPI
+service exposes the same workflow. The code base has 230 automated tests.
+
+For one held-out melanoma in our test set, for instance, the explainer reports that the
+photograph head named melanoma but was only 10\% sure, that the legacy model said benign
+keratosis because it ``was trained on a different dataset and cannot name five of the
+eleven diagnoses'' and was right on only 1\% of validation melanomas, and that most of
+the weight went to the metadata head, the embedding classifier and the photograph head,
+which agreed with the team and had high learned reliability for this case. The system then
+asked for the dermoscopic image. Every number in such an explanation is read from the
+evidence profile; the language model, when used, may only reword it.
 
 % =============================================================================
 \section{Results}\label{sec:results}
@@ -380,7 +429,30 @@ The oracle's 0.594 shows that per-case \emph{selection}, not the specialists, is
 bottleneck. On average the gate gives the largest weights to the metadata head (0.35--0.41)
 and S6 (0.21--0.22), moves weight to dermoscopy when it is present, and gives the legacy
 model 0.07. Isotonic calibration makes the displayed confidence honest: 0.757 shown on
-average against 0.731 actual accuracy with dermoscopy, 0.660 against 0.657 without.
+average against 0.731 actual accuracy with dermoscopy, 0.660 against 0.657 without
+(Fig.~\ref{fig:calib}).
+
+Per class (Fig.~\ref{fig:perclass}), the team helps most where the evidential network was
+weakest: benign keratoses (F1 0.16 to 0.51), actinic keratoses (0.24 to 0.47) and the small
+``benign other'' and inflammatory classes, which the network never predicted. It is worse
+on vascular lesions (0.88 to 0.36 on eight test lesions), where the dermoscopy head alone
+was the best judge, and the single malignant-other lesion is never found.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig_per_class_f1}
+\caption{Per-class F1 on the test set with dermoscopy: the evidential network alone and
+the full team. $n$ is the number of test lesions.}
+\label{fig:perclass}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.78\columnwidth]{fig_calibration}
+\caption{Reliability diagram on the test set: the calibrated confidence that the
+application displays tracks the observed accuracy.}
+\label{fig:calib}
+\end{figure}
 
 \subsection{Decisions}
 
@@ -391,6 +463,7 @@ Abstaining baselines are matched to \dguard{}'s coverage.}
 \label{tab:policy}
 \setlength{\tabcolsep}{2.8pt}
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccccc}
 \toprule
 Policy & Ans. & Derm. & Acc. & Missed & Cost \\
@@ -404,7 +477,7 @@ Entropy-chosen acquisition & 100\% & 29.5\% & 0.700 & 5.6\% & 0.790 \\
 \midrule
 \multicolumn{6}{l}{\dguard{} outcomes: \HIGH\ 57.1\%, \LOW\ 32.0\% (top-3 85.7\%), \DEFER\ 10.9\%}\\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 \dguard{} answers 89.1\% of patients (Table~\ref{tab:policy}). Its 57.1\% high-confidence
@@ -420,7 +493,18 @@ At the same coverage, a learned rejector trained to predict the model's own erro
 misses 3.8\%; the difference ($+0.7$ points, CI $-0.7$ to $+2.0$, $p=0.18$) is not
 significant, and thresholding is more accurate (81.5\% vs.\ 77.1\%) because it answers only
 the photograph's easiest cases. Always answering is cheapest in mean cost, since every
-clinician review is charged 1.5.
+clinician review is charged 1.5. Fig.~\ref{fig:rc} places these points on the full
+risk--coverage curves: no coverage level of the threshold reaches the policy's miss rate
+at 57\% coverage.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{fig_risk_coverage}
+\caption{Share of answered cancers called benign against the share of patients answered,
+for abstention by confidence and by $1-u$; the points are \dguard{}'s \HIGH\ tier and the
+learned rejector at the same coverage.}
+\label{fig:rc}
+\end{figure}
 
 \begin{figure}[t]
 \centering
@@ -445,9 +529,29 @@ Once the fused probabilities are good, simple uncertainty is a good enough guide
 
 Raising $c_{\mathrm{miss}}$ from 2 to 10 lowers the \HIGH\ share from 61.6\% to 53.4\% and
 the miss rate from 4.1\% to 1.9\% (thresholding: 3.8\% at the same coverage), while about
-89\% of patients still get an answer. Fairness is a weakness: for the 67 test lesions of
-skin tone~2 the \HIGH\ miss rate is 11.5\%, against 2.2\% for tone~3 ($n=489$); tone~1 has
-only 14 lesions.
+89\% of patients still get an answer (Fig.~\ref{fig:cost}). The cost of a missed cancer is
+therefore a dial a deploying clinic can set, not a hidden constant.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{fig_outcomes_cost}
+\caption{Outcome shares (bars) and the missed-cancer rate of \HIGH\ answers (line) as the
+cost of a missed cancer increases.}
+\label{fig:cost}
+\end{figure}
+
+Fairness is a weakness (Fig.~\ref{fig:tone}): for
+the 67 test lesions of skin tone~2 the \HIGH\ miss rate is 11.5\%, against 2.2\% for tone~3
+($n=489$); tone~1 has only 14 lesions. MILK10k is dominated by tone~3, and a calibration
+fitted on the whole validation set guarantees an average, not every group; group-wise
+calibration needs more lighter-tone data than the dataset contains.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\columnwidth]{fig_skin_tone}
+\caption{\HIGH\ share and missed cancers among \HIGH\ answers by MILK10k skin-tone class.}
+\label{fig:tone}
+\end{figure}
 
 \subsection{Robustness: DERMA-STRESS}
 
@@ -470,6 +574,14 @@ grain and covered-centre checks), and every case without metadata becomes a requ
 it. With these checks no damaged input received a high-confidence answer; JPEG artefacts
 kept 22\% at 1.5\% missed. The price is that 8\% of clean photographs are also flagged.
 
+\textbf{What each component adds.} Reading the experiments as an ablation: weighting the
+specialists by their evidence instead of fusing only the evidential heads adds 0.091
+photograph-only macro-F1 (0.286 to 0.377); the sixth specialist alone accounts for 0.045
+of it; cross-fitting removed an optimistic three points of \HIGH\ coverage that in-sample
+fitting had produced; the calibrated policy, rather than any particular fusion, is what
+keeps the miss rate at 3.0--3.5\%; and the explicit image and missing-details checks, not
+evidential ignorance, are what remove confident answers on damaged input.
+
 \subsection{External tests}
 
 \begin{table}[t]
@@ -479,6 +591,7 @@ thresholding at the same coverage.}
 \label{tab:shift}
 \setlength{\tabcolsep}{3pt}
 \small
+\resizebox{\columnwidth}{!}{%
 \begin{tabular}{lccc}
 \toprule
  & MILK10k & PAD-UFES-20 & Derm7pt \\
@@ -494,7 +607,7 @@ Accuracy of \HIGH\ answers & 0.771 & 0.517 & 0.708 \\
 Missed cancers, \HIGH & 3.1\% & 0.0\% & 3.8\% \\
 Threshold: missed / accuracy & 3.8\% / 0.815 & 0.0\% / 0.574 & 5.4\% / 0.846 \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
 
 The calibration guarantees assume that future patients resemble calibration patients.
@@ -505,7 +618,17 @@ was missed on PAD-UFES-20 and 3.8\% on Derm7pt, below thresholding's 5.4\%. On D
 where dermoscopy exists, the system asked for it for 39\% of lesions and overall accuracy
 rose from 0.402 with photographs alone to 0.479. The eleven-class diagnosis does not
 transfer: half of PAD-UFES-20's confident answers are wrong, melanoma recall on Derm7pt is
-31\%, and thresholding is more accurate on both datasets.
+31\%, and thresholding is more accurate on both datasets (Fig.~\ref{fig:shift}). Nothing
+was retrained on either dataset; they are external tests, deliberately kept out of
+training so that they measure what a deployment would meet.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.9\columnwidth]{fig_shift}
+\caption{Share of \HIGH\ answers, their accuracy and the cancers missed among them, on
+MILK10k and the two external datasets.}
+\label{fig:shift}
+\end{figure}
 
 \subsection{The earlier prototype, re-evaluated}\label{sec:legacy}
 
@@ -531,10 +654,47 @@ metadata alone. Fusing the seven with our learned gate, cross-validated on those
 photographs, gives 72.7\% against 59.8\% for averaging them; the gate recovers almost all of
 the best model's accuracy without being told which model that is.
 
-Finally, the PAD-UFES-20 questionnaire lets us test the scribe's triage rule: of 1{,}641
-lesions, those with any of its warning signs were malignant (BCC, SCC or melanoma) in
-48.7\% of cases against 12.4\% without (relative risk 3.9, 95\% CI 2.8--5.5), and every
-single sign had a relative risk between 1.65 and 3.0.
+\begin{table}[t]
+\centering
+\caption{The prototype's models on PAD-UFES-20: reported accuracy and honest re-scoring
+of the same saved weights.}
+\label{tab:legacy}
+\setlength{\tabcolsep}{3pt}
+\small
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llccc}
+\toprule
+ & Inputs & Reported & Same test & Unseen patients \\
+\midrule
+A & image & 85.5\% & 61.4\% & 56.8\% \\
+B & metadata & 84.1\% & 75.9\% & 75.0\% \\
+C & free text & 83.5\% & 23.5\% & 27.3\% \\
+D & image + metadata & 88.4\% & 63.5\% & 58.3\% \\
+E & image + text & 88.1\% & 61.4\% & 57.6\% \\
+F & text + metadata & 87.2\% & 72.2\% & 72.7\% \\
+G & all three & 89.9\% & 62.0\% & 57.6\% \\
+\midrule
+\multicolumn{4}{l}{A--G fused by the learned gate (unseen patients)} & 72.7\% \\
+\multicolumn{4}{l}{A--G simple average (unseen patients)} & 59.8\% \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Finally, the PAD-UFES-20 questionnaire lets us test the scribe's triage rule
+(Fig.~\ref{fig:symptoms}): of 1{,}641 lesions, those with any of its warning signs were
+malignant (BCC, SCC or melanoma) in 48.7\% of cases against 12.4\% without (relative risk
+3.9, 95\% CI 2.8--5.5), and every single sign had a relative risk between 1.65 and 3.0. A
+raised lesion, which the scribe did not originally look for, carried a relative risk of
+2.8 and was added as a result. These are clinician-collected questionnaire answers rather
+than free text, so the analysis supports the rule's direction, not its exact wording.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\columnwidth]{fig_symptoms}
+\caption{Relative risk of cancer with each warning sign on the PAD-UFES-20
+questionnaire (95\% CI). All exceed one.}
+\label{fig:symptoms}
+\end{figure}
 
 % =============================================================================
 \section{Discussion}
@@ -552,6 +712,12 @@ patient; post-hoc logit adjustment raised validation macro-F1 from 0.36 to 0.44 
 test macro-F1 from 0.376 to 0.359; fitting the fusion in-sample on the calibration lesions
 inflated the high-confidence share by three points before cross-fitting; and classes with
 fewer than ten test lesions are almost never predicted.
+
+\textbf{Where the gain comes from.} The oracle that picks the best specialist per case
+reaches 0.594 macro-F1, against 0.438 for the learned gate. The specialists already
+contain much of the right answer; deciding whom to believe is the hard part. A gate trained
+on more validation data, or distilled from the oracle, is the most direct way forward, and
+a dermatology foundation backbone \cite{yan2025panderm} would lift every specialist.
 
 \textbf{Lessons about evaluation.} Split by the unit you will meet in practice; never
 post-process predictions with the label; choose on validation and keep the choice when
