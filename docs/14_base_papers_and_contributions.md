@@ -175,7 +175,7 @@ the legacy study, and the questionnaire that validates the warning signs.
 5. **System (2 min):** six specialists → Devil's Advocate → fusion chosen on validation →
    gatekeeper → outcome.
 6. **Results (2 min):** 89% answered, 57% confident, 3.1% missed; rejector 4.9%.
-7. **Key finding (1 min):** threshold 3.5–9.3% vs ours 3.0–3.5%.
+7. **Key finding (1 min):** threshold 3.5–9.3% vs ours 3.0–3.5%; then the "findings at a glance" slide: evidence-aware fusion (+32% macro-F1) and the four outcomes.
 8. **Robustness and shift (1 min):** checks catch damaged photos; safety holds on two other
    datasets, fine diagnosis does not.
 9. **Honesty (30 s):** our old prototype re-evaluated.
@@ -195,7 +195,7 @@ just HOT AI?"* (Q-base) and *"What is your base paper?"*.
 | Literature dossier (all candidate papers) | `docs/reference/literature_survey_v2.md` |
 | Our earlier drafts | `paper/old1.tex`, `paper/old2.tex` |
 | The paper (10 pages, 26 references, compiled) | `paper/main.tex`, `paper/main.pdf` |
-| Project report (90 pages, VIT template) | `reports/DERMA-GUARD_Project_Report.docx` / `.pdf` (local; `scripts/build_report.py`) |
+| Project report (~92 pages, VIT template) | `reports/DERMA-GUARD_Project_Report.docx` / `.pdf` (local; `scripts/build_report.py`) |
 | Slides with speaker notes | `reports/DERMA-GUARD_Presentation.pptx` (local; `scripts/build_slides.py`) |
 | Every number | [05_results.md](05_results.md) |
 | The project in plain words | [13_simple_guide.md](13_simple_guide.md) |

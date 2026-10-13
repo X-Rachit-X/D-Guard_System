@@ -205,10 +205,10 @@ class Builder:
         from PIL import Image as _I
         with _I.open(path) as im:
             ratio = im.height / im.width
-        if 12.5 * ratio > 9.5:           # tall figures/screenshots: cap the height
-            p.add_run().add_picture(str(path), height=Cm(9.5))
+        if 14.5 * ratio > 11.0:          # tall figures/screenshots: cap the height
+            p.add_run().add_picture(str(path), height=Cm(11.0))
         else:
-            p.add_run().add_picture(str(path), width=Cm(12.5))
+            p.add_run().add_picture(str(path), width=Cm(14.5))
         fmt(p, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 6, 2)
         keep_with_next(p)
         c = self.doc.add_paragraph()
@@ -360,6 +360,43 @@ def fill_table(t, rows, keep_header=True):
                 extra._element.getparent().remove(extra._element)
             txt = r[j] if j < len(r) else ""
             set_run(cell.paragraphs[0].add_run(txt), 11)
+
+
+def short_caption(cap: str, limit: int = 95) -> str:
+    """First sentence of a caption, for the list of tables / figures."""
+    first = re.split(r"(?<=[a-z0-9)])\. ", cap.strip())[0].rstrip(".")
+    return first if len(first) <= limit else first[:limit].rsplit(" ", 1)[0] + " ..."
+
+
+def style_list_table(t, header, widths_cm, bold_rows=(), center_cols=()):
+    """Front-matter list as a proper bordered table: shaded header, fixed widths."""
+    set_borders(t, sz=6, color="7F7F7F")
+    tblPr = t._tbl.tblPr
+    lay = OxmlElement("w:tblLayout")
+    lay.set(qn("w:type"), "fixed")
+    tblPr.append(lay)
+    t.autofit = False
+    t.alignment = WD_TABLE_ALIGNMENT.CENTER
+    for i, row in enumerate(t.rows):
+        for j, cell in enumerate(row.cells):
+            if j < len(widths_cm):
+                cell.width = Cm(widths_cm[j])
+            par = cell.paragraphs[0]
+            if i == 0:
+                for extra in cell.paragraphs[1:]:
+                    extra._element.getparent().remove(extra._element)
+                for r in par.runs:
+                    r.text = ""
+                set_run(par.add_run(header[j] if j < len(header) else ""), 12, True)
+                shade(cell, "D9E2F3")
+            elif i in bold_rows:
+                for r in par.runs:
+                    r.bold = True
+            par.alignment = WD_ALIGN_PARAGRAPH.CENTER if (j in center_cols or i == 0) \
+                else WD_ALIGN_PARAGRAPH.LEFT
+            par.paragraph_format.space_before = Pt(2)
+            par.paragraph_format.space_after = Pt(2)
+            par.paragraph_format.line_spacing = 1.0
 
 
 def main() -> int:
@@ -551,9 +588,14 @@ def main() -> int:
     for lvl, num, ttl, _ in b.toc:
         contents.append([num if lvl == 1 else "", ttl if lvl == 1 else f"      {num}  {ttl}", ""])
     fill_table(T[0], contents)
-    fill_table(T[1], [[f"{lab}: {cap}", ""] for lab, cap, _ in b.tabs])
-    fill_table(T[2], [[f"{lab}: {cap}", ""] for lab, cap, _ in b.figs])
+    fill_table(T[1], [[f"{lab}: {short_caption(cap)}", ""] for lab, cap, _ in b.tabs])
+    fill_table(T[2], [[f"{lab}: {short_caption(cap)}", ""] for lab, cap, _ in b.figs])
     fill_table(T[3], [[a, e] for a, e in meta["abbreviations"]])
+    chapter_rows = [i + 1 for i, r in enumerate(contents) if r[0]]
+    style_list_table(T[0], ["Chapter", "Title", "Page"], [2.2, 12.0, 2.2], chapter_rows, (0, 2))
+    style_list_table(T[1], ["Title", "Page"], [14.2, 2.2], (), (1,))
+    style_list_table(T[2], ["Title", "Page"], [14.2, 2.2], (), (1,))
+    style_list_table(T[3], ["Abbreviation", "Expansion"], [4.2, 12.2], (), ())
     if len(T) > 4:   # the empty sample table at the end of the template
         try:
             T[4]._tbl.getparent().remove(T[4]._tbl)

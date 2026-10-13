@@ -1,5 +1,5 @@
 """
-scripts/build_slides.py - The project presentation (16 slides, 16:9) with speaker notes.
+scripts/build_slides.py - The project presentation (18 slides, 16:9) with speaker notes.
 
     python scripts/build_slides.py      ->  reports/DERMA-GUARD_Presentation.pptx
 
@@ -27,6 +27,11 @@ GREEN = RGBColor(0x1B, 0x7F, 0x3B)
 AMBER = RGBColor(0xB5, 0x47, 0x08)
 GREY = RGBColor(0x59, 0x59, 0x59)
 LIGHT = RGBColor(0xEE, 0xF2, 0xFF)
+GOLD = RGBColor(0xF2, 0xB7, 0x05)
+C_HIGH = RGBColor(0x1B, 0x7F, 0x3B)
+C_LOW = RGBColor(0x2E, 0x75, 0xB6)
+C_ASK = RGBColor(0xC5, 0x7B, 0x00)
+C_DEFER = RGBColor(0xB0, 0x3A, 0x2E)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 FONT = "Calibri"
 
@@ -72,6 +77,23 @@ def rect(slide, x, y, w, h, fill, line=None):
     return s
 
 
+def card(slide, x, y, w, h, big, label, sub="", color=NAVY, big_size=34):
+    """KPI card: coloured top strip, a big number, a label and a short note."""
+    rect(slide, x, y, w, h, WHITE, line=RGBColor(0xD0, 0xD7, 0xE5))
+    top = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, w, Inches(0.12))
+    top.fill.solid()
+    top.fill.fore_color.rgb = color
+    top.line.fill.background()
+    big_h = Pt(big_size * 1.5)
+    text(slide, x + Inches(0.1), y + Inches(0.18), w - Inches(0.2), big_h, big, big_size, color,
+         True, PP_ALIGN.CENTER, spacing=0)
+    text(slide, x + Inches(0.1), y + Inches(0.2) + big_h, w - Inches(0.2), Inches(0.45),
+         label, 15, NAVY, True, PP_ALIGN.CENTER, spacing=0)
+    if sub:
+        text(slide, x + Inches(0.1), y + Inches(0.58) + big_h, w - Inches(0.2),
+             h - Inches(0.65) - big_h, sub, 12.5, GREY, align=PP_ALIGN.CENTER, spacing=0)
+
+
 def new_slide(title, subtitle=None, notes=""):
     N["i"] += 1
     s = prs.slides.add_slide(BLANK)
@@ -79,6 +101,10 @@ def new_slide(title, subtitle=None, notes=""):
     band.fill.solid()
     band.fill.fore_color.rgb = NAVY
     band.line.fill.background()
+    acc = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, Inches(1.05), W, Inches(0.06))
+    acc.fill.solid()
+    acc.fill.fore_color.rgb = GOLD
+    acc.line.fill.background()
     text(s, Inches(0.5), Inches(0.14), Inches(11.5), Inches(0.8), title, 30, WHITE, True)
     if subtitle:
         text(s, Inches(0.5), Inches(1.15), Inches(12.3), Inches(0.6), subtitle, 17, NAVY, True)
@@ -135,15 +161,26 @@ bg = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, W, H)
 bg.fill.solid()
 bg.fill.fore_color.rgb = NAVY
 bg.line.fill.background()
-text(s, Inches(0.8), Inches(1.5), Inches(11.7), Inches(1.2), "DERMA-GUARD", 60, WHITE, True)
-text(s, Inches(0.8), Inches(2.7), Inches(11.7), Inches(1.4),
+bar = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.8), Inches(1.25), Inches(1.6), Inches(0.09))
+bar.fill.solid()
+bar.fill.fore_color.rgb = GOLD
+bar.line.fill.background()
+text(s, Inches(0.8), Inches(1.4), Inches(11.7), Inches(1.2), "DERMA-GUARD", 60, WHITE, True)
+text(s, Inches(0.8), Inches(2.55), Inches(11.7), Inches(1.4),
      "Evidence-Aware Specialist Consensus with Risk-Controlled Evidence Acquisition "
      "and Deferral for Multimodal Dermatology", 26, RGBColor(0xD9, 0xE2, 0xF3))
-text(s, Inches(0.8), Inches(4.5), Inches(11.7), Inches(1.2),
-     ["Rachit Agarwal (23BCE1577)",
-      "Guide: Dr. Sindhu Ravindran  ·  School of Computer Science and Engineering, VIT Chennai"],
-     18, WHITE)
-text(s, Inches(0.8), Inches(6.3), Inches(11.7), Inches(0.6),
+for k, (lab, c) in enumerate([("HIGH", C_HIGH), ("LOW", C_LOW), ("ACQUIRE", C_ASK), ("DEFER", C_DEFER)]):
+    rect(s, Inches(0.8 + k * 1.75), Inches(3.75), Inches(1.6), Inches(0.45), c)
+    text(s, Inches(0.8 + k * 1.75), Inches(3.78), Inches(1.6), Inches(0.4), lab, 14, WHITE, True,
+         PP_ALIGN.CENTER)
+rect(s, Inches(0.8), Inches(4.5), Inches(11.7), Inches(1.6), RGBColor(0x17, 0x3D, 0x60))
+text(s, Inches(1.05), Inches(4.58), Inches(11.3), Inches(0.4), "TEAM", 13, GOLD, True)
+text(s, Inches(1.05), Inches(4.92), Inches(11.3), Inches(0.5),
+     "Rachit Agarwal (23BCE1577)   ·   Patel Kavya Vipulkumar   ·   Aarav Prawin", 22, WHITE, True)
+text(s, Inches(1.05), Inches(5.5), Inches(11.3), Inches(0.5),
+     "Guide: Dr. Sindhu Ravindran  ·  School of Computer Science and Engineering, VIT Chennai",
+     16, RGBColor(0xD9, 0xE2, 0xF3))
+text(s, Inches(0.8), Inches(6.4), Inches(11.7), Inches(0.6),
      "An AI for skin lesions that knows when to answer, when to ask for more evidence, and "
      "when to hand over to a doctor.", 16, RGBColor(0xFF, 0xE6, 0x99))
 s.notes_slide.notes_text_frame.text = (
@@ -172,15 +209,15 @@ s = new_slide("Our idea: four outcomes instead of one label",
               "Behave like a careful clinician, and measure the cost of doing so",
               "Walk through the four boxes. Stress that every outcome still carries the system's "
               "tentative opinion, differential and urgency, so even deferred patients get information.")
-boxes = [("HIGH answer", "every safety check passed;\ncalibrated diagnosis", RGBColor(0xC6, 0xE0, 0xB4)),
-         ("ASK for evidence", "dermoscopy, missing details\nor a better photo", RGBColor(0xFF, 0xE6, 0x99)),
-         ("LOW answer", "best diagnosis, clearly marked;\na doctor confirms", RGBColor(0xFC, 0xE4, 0xD6)),
-         ("DEFER", "the evidence contradicts itself;\na doctor decides", RGBColor(0xF4, 0xB6, 0xB6))]
+boxes = [("HIGH answer", "every safety check passed; calibrated diagnosis", C_HIGH),
+         ("LOW answer", "best diagnosis, clearly marked; a doctor confirms", C_LOW),
+         ("ACQUIRE", "ask for dermoscopy, missing details or a better photo", C_ASK),
+         ("DEFER", "the evidence contradicts itself; a doctor decides", C_DEFER)]
 for k, (t, d, c) in enumerate(boxes):
     x = Inches(0.6 + k * 3.15)
     rect(s, x, Inches(2.1), Inches(2.95), Inches(2.4), c)
-    text(s, x + Inches(0.15), Inches(2.3), Inches(2.65), Inches(0.6), t, 22, NAVY, True, PP_ALIGN.CENTER)
-    text(s, x + Inches(0.15), Inches(3.1), Inches(2.65), Inches(1.3), d, 16, GREY, align=PP_ALIGN.CENTER)
+    text(s, x + Inches(0.15), Inches(2.3), Inches(2.65), Inches(0.6), t, 24, WHITE, True, PP_ALIGN.CENTER)
+    text(s, x + Inches(0.15), Inches(3.1), Inches(2.65), Inches(1.3), d, 16, WHITE, align=PP_ALIGN.CENTER)
 text(s, Inches(0.6), Inches(4.9), Inches(12.2), Inches(2.0), [
     "Six specialists give opinions; a 'Devil's Advocate' decides how much to trust each, case by case",
     "A calibrated, cost-aware policy picks the outcome, with a certified bound on missed cancers",
@@ -262,12 +299,12 @@ s = new_slide("Fusion: seven rules, compared fairly",
               "that stacking is the worst learned rule, and that the oracle shows choosing the right "
               "specialist per case is the real bottleneck (0.59 macro-F1).")
 picture(s, FIG / "fig_fusion_rules.png", Inches(0.4), Inches(1.85), w=Inches(8.8), h=Inches(5.0))
-text(s, Inches(9.4), Inches(1.95), Inches(3.7), Inches(5.0), [
-    "Every evidence-aware rule beats the evidential network alone",
-    "With dermoscopy: accuracy 0.731, cancer AUROC 0.885 (best of all rules)",
-    "Plain averaging and stacking are the weakest",
-    "Adding S6 alone: +0.045 macro-F1",
-    "Oracle ceiling: 0.594, so choosing whom to trust is the bottleneck"], 15, bullet=True)
+card(s, Inches(9.45), Inches(1.9), Inches(3.6), Inches(1.55), "0.286 → 0.377",
+     "photo-only macro-F1", "network alone → evidence-aware team", C_HIGH, 26)
+card(s, Inches(9.45), Inches(3.55), Inches(3.6), Inches(1.55), "0.885",
+     "cancer AUROC with dermoscopy", "accuracy 0.731, best of all rules", C_LOW, 26)
+card(s, Inches(9.45), Inches(5.2), Inches(3.6), Inches(1.55), "0.594",
+     "oracle ceiling (macro-F1)", "choosing whom to trust is the bottleneck", C_ASK, 26)
 
 # ================================================================ 8 decision
 s = new_slide("The decision policy",
@@ -289,23 +326,24 @@ s = new_slide("Results: what 787 unseen patients receive",
               "Emphasise the comparison at the SAME coverage on the SAME probabilities. The learned "
               "rejector is significantly less safe (p = 0.011); the confidence threshold is close "
               "(not significant) but, as the next slide shows, its safety is not stable.")
-table(s, Inches(0.4), Inches(1.9), Inches(6.3), [
-    ["Outcome", "Share", "Accuracy", "Missed cancers"],
-    ["HIGH answer", "57.1%", "77.1%", "3.1%"],
-    ["LOW answer (doctor confirms)", "32.0%", "49.6% (top-3 86%)", "21%"],
-    ["Defer", "10.9%", "-", "-"],
-    ["Answered in total", "89.1%", "67.2%", ""],
-    ["Dermoscopy requested", "29.5%", "", ""]], [2.6, 1.0, 1.6, 1.1], 14)
-table(s, Inches(7.0), Inches(1.9), Inches(6.0), [
+outs = [("57.1%", "HIGH answer", "77.1% accurate · 3.1% of cancers missed", C_HIGH),
+        ("32.0%", "LOW answer", "a doctor confirms · true diagnosis in top-3 for 86%", C_LOW),
+        ("29.5%", "ACQUIRE dermoscopy", "asked before deciding, then decided again", C_ASK),
+        ("10.9%", "DEFER", "evidence contradicts itself · a doctor decides", C_DEFER)]
+for k, (big, lab, sub_, c) in enumerate(outs):
+    card(s, Inches(0.4 + k * 3.15), Inches(1.85), Inches(2.95), Inches(2.0), big, lab, sub_, c, 36)
+table(s, Inches(7.0), Inches(4.1), Inches(6.0), [
     ["Same 57.1% coverage", "Accuracy", "Missed cancers"],
     ["DERMA-GUARD HIGH tier", "77.1%", "3.1%"],
     ["Confidence threshold", "81.5%", "3.8% (n.s.)"],
     ["Learned rejector (L2D)", "76.4%", "4.9% (p = 0.011)"],
-    ["Always answer (photo)", "65.7%", "7.2%"]], [2.8, 1.4, 1.8], 14)
-text(s, Inches(0.4), Inches(4.8), Inches(12.5), Inches(2.0), [
-    "Learn-then-Test certified at both stages; displayed confidence is calibrated (76% shown, 73% actual)",
-    "Against us: the threshold is more accurate; always answering is cheaper; HIGH answers raise "
-    "more false alarms (50%)"], 16, bullet=True)
+    ["Always answer (photo)", "65.7%", "7.2%"]], [2.8, 1.4, 1.8], 13, h_row=0.4)
+text(s, Inches(0.4), Inches(4.1), Inches(6.4), Inches(2.8), [
+    [("89.1% answered (HIGH + LOW), 67.2% accurate overall", True, NAVY)],
+    "Learn-then-Test certified at both stages (λ = 0.218 / 0.276)",
+    "Displayed confidence is calibrated: 76% shown, 73% actual",
+    "Against us: the threshold is more accurate; always answering is cheaper; HIGH answers "
+    "raise more false alarms (50%)"], 15, bullet=True)
 
 # ================================================================ 10 key finding
 s = new_slide("Key finding: a threshold is only as safe as its probabilities",
@@ -386,6 +424,22 @@ def cropped(name, frac):
 
 picture(s, cropped("patient.png", 0.62), Inches(0.4), Inches(1.85), w=Inches(6.2), h=Inches(5.0))
 picture(s, cropped("compare.png", 0.62), Inches(6.8), Inches(1.85), w=Inches(6.2), h=Inches(5.0))
+
+# ================================================================ 14b findings
+s = new_slide("Our findings at a glance",
+              "Evidence-aware fusion decides what we believe; four outcomes decide what we do",
+              "Summarise in one breath: trusting specialists case by case improves diagnosis; the four "
+              "outcomes keep the confident answers safe; the safety is stable across models and "
+              "datasets; damaged photos never get a confident answer; and asking for evidence pays.")
+finds = [("+32%", "Evidence-aware fusion", "photo-only macro-F1 0.286 → 0.377; learned gate beats averaging and stacking", C_HIGH),
+         ("3.1%", "Missed cancers, HIGH tier", "certified ≤ 5% by Learn-then-Test; learned rejector 4.9% (p = 0.011)", C_LOW),
+         ("3.0–3.5%", "Stable on 4 fusion back-ends", "a confidence threshold swings 3.5–9.3% on the same models", C_ASK),
+         ("0", "Confident answers on damaged photos", "blur fooled the uncertainty; the quality checks catch every case", C_DEFER),
+         ("0.0% / 3.8%", "Safety on new datasets", "PAD-UFES-20 / Derm7pt missed cancers, no retraining", NAVY),
+         ("0.40 → 0.48", "Asking for dermoscopy pays", "Derm7pt accuracy once the requested image arrives", GREY)]
+for k, (big, lab, sub_, c) in enumerate(finds):
+    r_, c_ = divmod(k, 3)
+    card(s, Inches(0.4 + c_ * 4.2), Inches(1.85 + r_ * 2.5), Inches(4.0), Inches(2.3), big, lab, sub_, c, 34)
 
 # ================================================================ 15 limits
 s = new_slide("Limitations and what comes next", None,
